@@ -24,7 +24,7 @@ import threading
 import types
 from typing import (Any, Callable, ClassVar, Dict, Generator,
                     Iterator, List, NamedTuple, Optional, Sequence, Set, Tuple,
-                    Type, Union, cast, no_type_check)
+                    Type, Union, cast, no_type_check, Hashable)
 
 import numpy as np
 
@@ -35,6 +35,8 @@ from . import source_info_util
 
 from .util import safe_zip, safe_map, partial, curry, prod, partialmethod
 from .pprint_util import pp, vcat, PrettyPrint
+
+AxisName = Hashable
 
 # TODO(dougalm): compilation cache breaks the leak detector. Consisder solving.
 check_leaks = False
@@ -641,7 +643,10 @@ class TraceStack:
     return new
 
 class Sublevel(int): pass
-AxisEnvFrame = namedtuple('AxisEnvFrame', ['name', 'size'])
+
+class AxisEnvFrame(NamedTuple):
+  name: AxisName
+  size: int
 
 
 class TraceState:
@@ -931,12 +936,15 @@ class UnshapedArray(AbstractValue):
     raise TypeError(msg)
 
 class ShapedArray(UnshapedArray):
-  __slots__ = ['shape']
+  __slots__ = ['shape', 'named_shape']
+  shape: Sequence[int]
+  named_shape: Dict[AxisName, int]
   array_abstraction_level = 1
 
-  def __init__(self, shape, dtype, weak_type=False):
+  def __init__(self, shape, dtype, weak_type=False, named_shape={}):
     super(ShapedArray, self).__init__(dtype, weak_type=weak_type)
     self.shape = canonicalize_shape(shape)
+    self.named_shape = named_shape
 
   ndim = property(lambda self: len(self.shape))
   size = property(lambda self: prod(self.shape))
@@ -949,18 +957,22 @@ class ShapedArray(UnshapedArray):
   def __eq__(self, other):
     return (type(self) is type(other)
             and self.dtype == other.dtype and self.shape == other.shape
-            and self.weak_type == other.weak_type)
+            and self.weak_type == other.weak_type
+            and (tuple(sorted(self.named_shape.items()))
+                 == tuple(sorted(other.named_shape.items()))))
 
   def __hash__(self):
     # can use hash(self.dtype) and rely on the fact that numpy reuses base dtype
     # objects, e.g. `np.zeros(3).dtype is np.zeros(4).dtype`, or we can use
     # the unique character code via hash(self.dtype.char)
-    return hash((self.shape, self.dtype, self.weak_type))
+    return hash((self.shape, self.dtype, self.weak_type,
+                 tuple(sorted(self.named_shape.items()))))
 
   def at_least_vspace(self):
     return self
 
   def join(self, other):
+    assert not self.named_shape and not other.named_shape
     if self.shape == other.shape and self.dtype == other.dtype:
       if self.weak_type == other.weak_type:
         return self
@@ -973,7 +985,8 @@ class ShapedArray(UnshapedArray):
 
   def str_short(self):
     shapestr = ','.join(map(str, self.shape))
-    return '{}[{}]'.format(self.dtype.name, shapestr)
+    named_shapestr = ','.join(f'{k}:{v}' for k, v in sorted(self.named_shape.items()))
+    return f'{self.dtype.name}[{shapestr};{named_shapestr}]'
 
   def __len__(self):
     try:
@@ -1050,7 +1063,8 @@ abstract_token = AbstractToken()
 
 def raise_to_shaped(aval: AbstractValue, weak_type=False):
   if isinstance(aval, ShapedArray):
-    return ShapedArray(aval.shape, aval.dtype, weak_type=weak_type)
+    return ShapedArray(aval.shape, aval.dtype, weak_type=weak_type,
+                       named_shape=aval.named_shape)
   elif aval is abstract_unit:
     return abstract_unit
   elif aval is abstract_token:
@@ -1173,21 +1187,31 @@ class MapPrimitive(Primitive):
 
 # ------------------- Jaxpr checking -------------------
 
-def mapped_aval(size: int, aval: AbstractValue) -> AbstractValue:
+# TODO(mattjj): make registry-extensible?
+# TODO(mattjj): rename to unstack / stack?
+def mapped_aval(axis_name: AxisName, size: int, aval: AbstractValue,
+                ) -> AbstractValue:
   if aval is abstract_unit:
     return aval
   elif isinstance(aval, ShapedArray):
     # might be raising abstraction level from Concrete here
     assert aval.shape[0] == size
-    return ShapedArray(aval.shape[1:], aval.dtype)
+    assert axis_name not in aval.named_shape, "TODO enable shadowing?"
+    return ShapedArray(aval.shape[1:], aval.dtype,
+                       named_shape={axis_name:size, **aval.named_shape})
   else:
     raise TypeError(f"Mapped operand {aval}")
 
-def unmapped_aval(size: int, aval: AbstractValue) -> AbstractValue:
+def unmapped_aval(axis_name: AxisName, size: int, aval: AbstractValue,
+                  ) -> AbstractValue:
   if aval is abstract_unit:
     return aval
   elif isinstance(aval, ShapedArray):
-    return ShapedArray((size,) + aval.shape, aval.dtype)
+    assert aval.named_shape.get(axis_name, None) == size
+    named_shape = dict(aval.named_shape)
+    del named_shape[axis_name]
+    return ShapedArray((size,) + aval.shape, aval.dtype,
+                       named_shape=named_shape)
   else:
     raise TypeError(f"Mapped output {aval}")
 
@@ -1562,7 +1586,7 @@ def omnistaging_enabler() -> None:
   Primitive.bind = bind
 
   @contextmanager
-  def extend_axis_env(axis_name, size: int):
+  def extend_axis_env(axis_name: AxisName, size: int):
     frame = AxisEnvFrame(axis_name, size)
     thread_local_state.trace_state.axis_env.append(frame)
     try:

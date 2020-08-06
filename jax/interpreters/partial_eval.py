@@ -1013,12 +1013,12 @@ class DynamicJaxprTrace(core.Trace):
   def process_map(self, map_primitive, f, tracers, params):
     in_avals = [t.aval for t in tracers]
     axis_name, axis_size = params['axis_name'], params['axis_size']
-    reduced_in_avals = [core.mapped_aval(axis_size, a) if m else a
+    reduced_in_avals = [core.mapped_aval(axis_name, axis_size, a) if m else a
                         for m, a in zip(params['mapped_invars'], in_avals)]
     with core.extend_axis_env(axis_name, axis_size):  # type: ignore
       jaxpr, reduced_out_avals, consts = trace_to_subjaxpr_dynamic(
           f, self.master, reduced_in_avals)
-    out_avals = [core.unmapped_aval(params['axis_size'], a) for a in reduced_out_avals]
+    out_avals = [core.unmapped_aval(axis_name, axis_size, a) for a in reduced_out_avals]
     out_tracers = [DynamicJaxprTracer(self, a) for a in out_avals]
     invars = map(self.getvar, tracers)
     outvars = map(self.getvar, out_tracers)

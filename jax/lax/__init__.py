@@ -193,6 +193,7 @@ from .lax import (
   pad_p,
   padtype_to_pads,
   partial,
+  pbroadcast,
   population_count,
   population_count_p,
   pow,

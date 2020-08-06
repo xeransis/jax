@@ -280,23 +280,6 @@ def _as_slice_indices(arr: xla.DeviceArray, idx: Index) -> Tuple[
   return tuple(start_indices), tuple(limit_indices), tuple(removed_dims) # type: ignore
 
 
-def shard_aval(size, aval):
-  try:
-    return shard_aval_handlers[type(aval)](size, aval)
-  except KeyError as err:
-    raise TypeError("No shard_aval handler for type: {}".format(type(aval))
-                    ) from err
-shard_aval_handlers: Dict[Type[core.AbstractValue], Callable[[int, Any], Any]] = {}
-shard_aval_handlers[core.AbstractUnit] = lambda size, x: x
-def _shard_abstract_array(size, x):
-  if not x.shape:
-    raise ValueError("Scalar cannot be split across {} shards.".format(size))
-  if x.shape[0] != size:
-    raise ValueError("Axis size {} does not match leading dimension of "
-                     "shape {}".format(size, x.shape))
-  return ShapedArray(x.shape[1:], x.dtype)
-shard_aval_handlers[ShapedArray] = _shard_abstract_array
-
 # TODO(skye): expose PyLocalBuffers in xla_client
 def aval_to_result_handler(sharding_spec: Optional[ShardingSpec],
                            indices: Optional[Tuple[Index]],
@@ -694,8 +677,8 @@ def parallel_callable(fun, backend, axis_name, axis_size, global_axis_size,
     local_devices = None
 
   if config.omnistaging_enabled:
-    sharded_avals = tuple(shard_aval(axis_size, aval) if m else aval
-                          for m, aval in zip(mapped_invars, avals))
+    sharded_avals = tuple(core.mapped_aval(axis_name, axis_size, aval)
+                          if m else aval for m, aval in zip(mapped_invars, avals))
     with core.extend_axis_env(axis_name, axis_size):  # type: ignore
       jaxpr, out_avals, consts = pe.trace_to_jaxpr_final(fun, sharded_avals)
     jaxpr = xla.apply_outfeed_rewriter(jaxpr)
@@ -705,8 +688,8 @@ def parallel_callable(fun, backend, axis_name, axis_size, global_axis_size,
       with extend_dynamic_axis_env(axis_name, dummy._trace, global_axis_size):  # type: ignore
         return fun.call_wrapped(*args)
 
-    sharded_avals = tuple(shard_aval(axis_size, aval) if m else aval
-                          for m, aval in zip(mapped_invars, avals))
+    sharded_avals = tuple(core.mapped_aval(axis_name, axis_size, aval)
+                          if m else aval for m, aval in zip(mapped_invars, avals))
     pvals = [pe.PartialVal.unknown(aval) for aval in sharded_avals]
     # We add a dummy first invar, to carry the trace  details to `dynamic_fun`
     pval = pe.PartialVal.unknown(core.abstract_unit)  # dummy value for axis env
@@ -866,7 +849,7 @@ def parallel_callable(fun, backend, axis_name, axis_size, global_axis_size,
   handle_args = partial(shard_args, compiled.local_devices(), input_indices)
   if config.omnistaging_enabled:
     handle_outs = avals_to_results_handler(  # type: ignore
-        axis_size, num_local_replicas, num_partitions, out_parts, out_avals)
+        axis_name, axis_size, num_local_replicas, num_partitions, out_parts, out_avals)
   else:
     handle_outs = _pvals_to_results_handler(axis_size, num_local_replicas,
                                             num_partitions, out_parts,
@@ -1371,7 +1354,7 @@ def omnistaging_enable() -> None:
       axis_index_p, apply_parallel_primitive, parallel_pure_rules, \
       _pvals_to_results_handler, _pval_to_result_handler, replicate
 
-  def avals_to_results_handler(size, nrep, npart, out_parts, out_avals):
+  def avals_to_results_handler(axis_name, size, nrep, npart, out_parts, out_avals):
     nouts = len(out_avals)
     if out_parts is None:
       out_parts = (None,) * len(out_avals)
@@ -1380,10 +1363,10 @@ def omnistaging_enable() -> None:
     out_specs = [_pmap_sharding_spec(nrep, size, npart, parts, aval, True)
                 if aval is not core.abstract_unit else None
                 for parts, aval in zip(out_parts, out_avals)]
-    out_indices = [spec_to_indices(core.unmapped_aval(size, aval).shape, spec)
+    out_indices = [spec_to_indices(core.unmapped_aval(axis_name, size, aval).shape, spec)
                   if aval is not core.abstract_unit else None
                   for aval, spec in zip(out_avals, out_specs)]  # pytype: disable=attribute-error
-    handlers = [aval_to_result_handler(spec, idcs, core.unmapped_aval(size, aval))
+    handlers = [aval_to_result_handler(spec, idcs, core.unmapped_aval(axis_name, size, aval))
                 for spec, idcs, aval in zip(out_specs, out_indices, out_avals)]
 
     def handler(out_bufs):

@@ -234,14 +234,28 @@ def _promote_shapes(fun_name, *args):
   else:
     shapes = [shape(arg) for arg in args]
     nonscalar_ranks = [len(shp) for shp in shapes if shp]
-    if not nonscalar_ranks or len(set(nonscalar_ranks)) == 1:
+    named_shapes = [core.raise_to_shaped(core.get_aval(arg)).named_shape
+                    for arg in args]
+    if (not _any(named_shapes) and
+        (not nonscalar_ranks or len(set(nonscalar_ranks)) == 1)):
       return args
     else:
       if FLAGS.jax_numpy_rank_promotion != "allow":
         _rank_promotion_warning_or_error(fun_name, shapes)
+      if _any(named_shapes):
+        union_shape = {axis_name:size for named_shape in named_shapes
+                       for axis_name, size in named_shape.items()}
+        args = [_pbroadcast_to(arg, named_shape, union_shape)
+                for named_shape, arg in zip(named_shapes, args)]
       result_rank = len(lax.broadcast_shapes(*shapes))
       return [broadcast_to(arg, (1,) * (result_rank - len(shp)) + shp)
               for arg, shp in zip(args, shapes)]
+
+def _pbroadcast_to(x, named_shape, result_shape):
+  for name in result_shape:
+    if name not in named_shape:
+      x = lax.pbroadcast(x, name)
+  return x
 
 def _rank_promotion_warning_or_error(fun_name, shapes):
   if FLAGS.jax_numpy_rank_promotion == "warn":

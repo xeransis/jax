@@ -1883,7 +1883,8 @@ def standard_abstract_eval(prim, shape_rule, dtype_rule, *args, **kwargs):
   if least_specialized is ConcreteArray:
     return ConcreteArray(prim.impl(*[x.val for x in args], **kwargs))
   elif least_specialized is ShapedArray:
-    return ShapedArray(shape_rule(*args, **kwargs), dtype_rule(*args, **kwargs))
+    return ShapedArray(shape_rule(*args, **kwargs), dtype_rule(*args, **kwargs),
+                       named_shape=standard_named_shape_rule(*args))
   elif least_specialized is UnshapedArray:
     return UnshapedArray(dtype_rule(*args, **kwargs))
   else:
@@ -1893,6 +1894,13 @@ def standard_abstract_eval(prim, shape_rule, dtype_rule, *args, **kwargs):
 def standard_translate(name, c, *args, **kwargs):
   xla_opname = ''.join(term.capitalize() for term in name.split('_'))
   return getattr(xops, xla_opname)(*args, **kwargs)
+
+
+def standard_named_shape_rule(*avals):
+  if not all(av1.named_shape == av2.named_shape
+             for av1, av2 in zip(avals[:-1], avals[1:])):
+    raise TypeError("nothing good")
+  return avals[0].named_shape
 
 
 def unop_dtype_rule(result_dtype, accepted_dtypes, name, aval, **kwargs):
@@ -5562,6 +5570,24 @@ rng_uniform_p = Primitive("rng_uniform")
 rng_uniform_p.def_impl(partial(xla.apply_primitive, rng_uniform_p))
 rng_uniform_p.def_abstract_eval(_rng_uniform_abstract_eval)
 xla.translations[rng_uniform_p] = _rng_uniform_translation_rule
+
+
+def pbroadcast(x, axis_name):
+  return pbroadcast_p.bind(x, axis_name=axis_name)
+
+def _pbroadcast_abstract_eval(aval, *, axis_name):
+  aval = core.raise_to_shaped(aval)
+  size = core.axis_frame(axis_name).size
+  named_shape = {axis_name:size, **aval.named_shape}
+  return ShapedArray(aval.shape, aval.dtype, named_shape=named_shape)
+
+def _pbroadcast_translation_rule(c, xla_x, *, axis_name):
+  return xla_x
+
+pbroadcast_p = Primitive('pbroadcast')
+pbroadcast_p.def_abstract_eval(_pbroadcast_abstract_eval)
+xla.translations[pbroadcast_p] = _pbroadcast_translation_rule
+
 
 ### util
 
