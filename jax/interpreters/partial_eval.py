@@ -174,14 +174,16 @@ class JaxprTrace(Trace):
 
     in_pvals = [t.pval for t in tracers]
     if primitive.map_primitive:
-      mapped_aval = partial(core.mapped_aval, params['axis_size'])
+      mapped_aval = partial(core.mapped_aval, params['axis_name'], params['axis_size'])
       in_pvals = [pval if pval.is_known() or not is_mapped
                   else PartialVal.unknown(mapped_aval(pval[0]))
                   for pval, is_mapped in zip(in_pvals, params['mapped_invars'])]
     jaxpr, out_pvals, consts, env_tracers = self.partial_eval(
         f, in_pvals, partial(primitive.bind, **params))
+    out_avals, _ = unzip2(out_pvals)
+    jaxpr, out_pvals = _pbroadcast_if_needed(jaxpr, out_avals)
     if primitive.map_primitive:
-      unmapped_aval = partial(core.unmapped_aval, params['axis_size'])
+      unmapped_aval = partial(core.unmapped_aval, params['axis_name'], params['axis_size'])
       out_pvals = [pval if pval.is_known()
                    else PartialVal.unknown(unmapped_aval(pval[0]))
                    for pval in out_pvals]
@@ -1018,7 +1020,7 @@ class DynamicJaxprTrace(core.Trace):
     with core.extend_axis_env(axis_name, axis_size):  # type: ignore
       jaxpr, reduced_out_avals, consts = trace_to_subjaxpr_dynamic(
           f, self.master, reduced_in_avals)
-    out_avals = [core.unmapped_aval(axis_name, axis_size, a) for a in reduced_out_avals]
+    # jaxpr, out_avals = _pbroadcast_if_needed(jaxpr, reduced_out_avals)  # TODO
     out_tracers = [DynamicJaxprTracer(self, a) for a in out_avals]
     invars = map(self.getvar, tracers)
     outvars = map(self.getvar, out_tracers)

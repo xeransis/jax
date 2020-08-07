@@ -371,16 +371,26 @@ def _notuple_psum_translation_rule(c, *args, axis_name, axis_env,
       return psum(val)
   return xops.Tuple(c, list(map(_translate, args)))
 
-def _psum_transpose_rule(cts, axis_name, axis_index_groups):
+# TODO(jekbradbury): add tuple pbroadcast
+def _psum_transpose_rule(cts, _, axis_name, axis_index_groups):
   nonzero_out_cts, treedef = tree_util.tree_flatten(cts)
-  nonzero_in_cts = psum_p.bind(*nonzero_out_cts, axis_name=axis_name,
-                               axis_index_groups=axis_index_groups)
+  nonzero_in_cts = [lax.pbroadcast(ct, axis_name) for ct in nonzero_out_cts]
   return tree_util.tree_unflatten(treedef, nonzero_in_cts)
+
+def _psum_abstract_eval(*avals, axis_name, axis_index_groups):
+  return [_remove_named_axis(axis_name, raise_to_shaped(aval)) for aval in avals]
+
+def _remove_named_axis(axis_name, aval):
+  assert isinstance(aval, ShapedArray)
+  named_shape = dict(aval.named_shape)
+  del named_shape[axis_name]
+  return ShapedArray(aval.shape, aval.dtype, weak_type=aval.weak_type,
+                     named_shape=named_shape)
 
 psum_p = core.Primitive('psum')
 psum_p.multiple_results = True
 psum_p.def_impl(partial(pxla.apply_parallel_primitive, psum_p))
-psum_p.def_abstract_eval(lambda *args, **params: map(raise_to_shaped, args))
+psum_p.def_abstract_eval(_psum_abstract_eval)
 pxla.soft_pmap_rules[psum_p] = \
     partial(_allreduce_soft_pmap_rule, psum_p, lax._reduce_sum)
 xla.parallel_translations[psum_p] = _psum_translation_rule
@@ -470,6 +480,28 @@ all_to_all_p.def_abstract_eval(lambda x, **params: raise_to_shaped(x))
 xla.parallel_translations[all_to_all_p] = _all_to_all_translation_rule
 ad.deflinear(all_to_all_p, _all_to_all_transpose_rule)
 pxla.multi_host_supported_collectives.add(all_to_all_p)
+
+
+def pbroadcast(x, axis_name):
+  return pbroadcast_p.bind(x, axis_name=axis_name)
+
+def _pbroadcast_abstract_eval(aval, *, axis_name):
+  aval = core.raise_to_shaped(aval)
+  assert axis_name not in aval.named_shape
+  size = core.axis_frame(axis_name).size
+  named_shape = {axis_name:size, **aval.named_shape}
+  return ShapedArray(aval.shape, aval.dtype, named_shape=named_shape)
+
+def _pbroadcast_translation_rule(c, xla_x, *, axis_name):
+  return xla_x
+
+def _pbroadcast_transpose_rule(ct, *, axis_name):
+  return [psum(ct, axis_name)]
+
+pbroadcast_p = core.Primitive('pbroadcast')
+pbroadcast_p.def_abstract_eval(_pbroadcast_abstract_eval)
+xla.translations[pbroadcast_p] = _pbroadcast_translation_rule
+ad.deflinear(pbroadcast_p, _pbroadcast_transpose_rule)
 
 
 ### papply rules

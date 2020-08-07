@@ -22,6 +22,7 @@ import warnings
 
 import numpy as np
 
+import jax
 from .. import core
 from .. import ad_util
 from .. import api
@@ -81,6 +82,22 @@ def broadcast_shapes(*shapes):
   return result_shape
 
 def _identity(x): return x
+
+def _promote_named_shape(*args):
+  named_shapes = [core.raise_to_shaped(core.get_aval(x)).named_shape
+                  for x in args]
+  if not any(named_shapes):
+    return args
+  union_shape = {axis_name:size for named_shape in named_shapes
+                 for axis_name, size in named_shape.items()}
+  return [_pbroadcast_to(arg, named_shape, union_shape)
+          for named_shape, arg in zip(named_shapes, args)]
+
+def _pbroadcast_to(x, named_shape, result_shape):
+  for name in result_shape:
+    if name not in named_shape:
+      x = jax.lax.pbroadcast(x, name)
+  return x
 
 ### traceables
 
@@ -305,6 +322,7 @@ def sub(x: Array, y: Array) -> Array:
 
 def mul(x: Array, y: Array) -> Array:
   r"""Elementwise multiplication: :math:`x \times y`."""
+  x, y = _promote_named_shape(x, y)
   return mul_p.bind(x, y)
 
 def div(x: Array, y: Array) -> Array:
@@ -5570,23 +5588,6 @@ rng_uniform_p = Primitive("rng_uniform")
 rng_uniform_p.def_impl(partial(xla.apply_primitive, rng_uniform_p))
 rng_uniform_p.def_abstract_eval(_rng_uniform_abstract_eval)
 xla.translations[rng_uniform_p] = _rng_uniform_translation_rule
-
-
-def pbroadcast(x, axis_name):
-  return pbroadcast_p.bind(x, axis_name=axis_name)
-
-def _pbroadcast_abstract_eval(aval, *, axis_name):
-  aval = core.raise_to_shaped(aval)
-  size = core.axis_frame(axis_name).size
-  named_shape = {axis_name:size, **aval.named_shape}
-  return ShapedArray(aval.shape, aval.dtype, named_shape=named_shape)
-
-def _pbroadcast_translation_rule(c, xla_x, *, axis_name):
-  return xla_x
-
-pbroadcast_p = Primitive('pbroadcast')
-pbroadcast_p.def_abstract_eval(_pbroadcast_abstract_eval)
-xla.translations[pbroadcast_p] = _pbroadcast_translation_rule
 
 
 ### util

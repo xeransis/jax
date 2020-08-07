@@ -39,6 +39,7 @@ from typing import (Any, Callable, Dict, List, Optional, Sequence, Set, Tuple,
 from absl import logging
 import numpy as np
 
+import jax
 from ..config import flags, config
 from .. import core
 from .. import linear_util as lu
@@ -677,10 +678,18 @@ def parallel_callable(fun, backend, axis_name, axis_size, global_axis_size,
     local_devices = None
 
   if config.omnistaging_enabled:
+    @lu.wrap_init
+    def pfun(*args):
+      outs = fun.call_wrapped(*args)
+      avals = [core.raise_to_shaped(core.get_aval(x)) for x in outs]
+      return [jax.lax.pbroadcast(x, axis_name)
+              if isinstance(aval, ShapedArray) and axis_name not in aval.named_shape
+              else x for x, aval in zip(outs, avals)]
+
     sharded_avals = tuple(core.mapped_aval(axis_name, axis_size, aval)
                           if m else aval for m, aval in zip(mapped_invars, avals))
     with core.extend_axis_env(axis_name, axis_size):  # type: ignore
-      jaxpr, out_avals, consts = pe.trace_to_jaxpr_final(fun, sharded_avals)
+      jaxpr, out_avals, consts = pe.trace_to_jaxpr_final(pfun, sharded_avals)
     jaxpr = xla.apply_outfeed_rewriter(jaxpr)
   else:
     @lu.wrap_init

@@ -972,8 +972,9 @@ class ShapedArray(UnshapedArray):
     return self
 
   def join(self, other):
-    assert not self.named_shape and not other.named_shape
-    if self.shape == other.shape and self.dtype == other.dtype:
+    if self == other:
+      return self
+    elif self.shape == other.shape and self.dtype == other.dtype:
       if self.weak_type == other.weak_type:
         return self
       else:
@@ -1207,7 +1208,8 @@ def unmapped_aval(axis_name: AxisName, size: int, aval: AbstractValue,
   if aval is abstract_unit:
     return aval
   elif isinstance(aval, ShapedArray):
-    assert aval.named_shape.get(axis_name, None) == size
+    size_ = aval.named_shape.get(axis_name, None)
+    assert size_ == size, (size_, size)
     named_shape = dict(aval.named_shape)
     del named_shape[axis_name]
     return ShapedArray((size,) + aval.shape, aval.dtype,

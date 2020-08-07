@@ -45,7 +45,7 @@ from ..config import flags, config
 from ..interpreters.xla import DeviceArray
 from ..interpreters.masking import Poly
 from .. import lax
-from ..lax.lax import _device_put_raw
+from ..lax.lax import _device_put_raw, _pbroadcast_to
 from .. import ops
 from ..util import (partial, unzip2, prod as _prod,
                     subvals, safe_zip)
@@ -250,12 +250,6 @@ def _promote_shapes(fun_name, *args):
       result_rank = len(lax.broadcast_shapes(*shapes))
       return [broadcast_to(arg, (1,) * (result_rank - len(shp)) + shp)
               for arg, shp in zip(args, shapes)]
-
-def _pbroadcast_to(x, named_shape, result_shape):
-  for name in result_shape:
-    if name not in named_shape:
-      x = lax.pbroadcast(x, name)
-  return x
 
 def _rank_promotion_warning_or_error(fun_name, shapes):
   if FLAGS.jax_numpy_rank_promotion == "warn":
