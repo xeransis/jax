@@ -242,11 +242,6 @@ def _promote_shapes(fun_name, *args):
     else:
       if FLAGS.jax_numpy_rank_promotion != "allow":
         _rank_promotion_warning_or_error(fun_name, shapes)
-      if _any(named_shapes):
-        union_shape = {axis_name:size for named_shape in named_shapes
-                       for axis_name, size in named_shape.items()}
-        args = [_pbroadcast_to(arg, named_shape, union_shape)
-                for named_shape, arg in zip(named_shapes, args)]
       result_rank = len(lax.broadcast_shapes(*shapes))
       return [broadcast_to(arg, (1,) * (result_rank - len(shp)) + shp)
               for arg, shp in zip(args, shapes)]

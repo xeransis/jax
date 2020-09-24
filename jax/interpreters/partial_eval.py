@@ -22,6 +22,7 @@ from weakref import ref
 
 import numpy as np
 
+import jax
 from .. import core
 from .. import dtypes
 from .. import linear_util as lu
@@ -180,12 +181,14 @@ class JaxprTrace(Trace):
                   for pval, is_mapped in zip(in_pvals, params['mapped_invars'])]
     jaxpr, out_pvals, consts, env_tracers = self.partial_eval(
         f, in_pvals, partial(primitive.bind, **params))
-    out_avals, _ = unzip2(out_pvals)
-    jaxpr, out_pvals = _pbroadcast_if_needed(jaxpr, out_avals)
     if primitive.map_primitive:
-      unmapped_aval = partial(core.unmapped_aval, params['axis_name'], params['axis_size'])
+      mapped_consts = tuple(v.aval is not core.abstract_unit
+                            and params['axis_name'] in v.aval.named_shape
+                            for v in jaxpr.constvars)
+      maybe_unmapped_aval = partial(core.maybe_unmapped_aval, params['axis_name'],
+                                    params['axis_size'])
       out_pvals = [pval if pval.is_known()
-                   else PartialVal.unknown(unmapped_aval(pval[0]))
+                   else PartialVal.unknown(maybe_unmapped_aval(pval[0]))
                    for pval in out_pvals]
 
     # Avoid staging out trivial calls, but maps may involve broadcasting.
@@ -219,7 +222,7 @@ class JaxprTrace(Trace):
     new_params = dict(params, call_jaxpr=convert_constvars_jaxpr(jaxpr))
     if primitive.map_primitive:
       mapped_invars = params['mapped_invars']
-      new_mapped_invars = ((True,) * len(const_tracers) +
+      new_mapped_invars = (mapped_consts +
                            (False,) * len(env_tracers) +
                            tuple(v for v, t in zip(mapped_invars, tracers)
                                  if not t.pval.is_known()))
@@ -245,12 +248,16 @@ class JaxprTrace(Trace):
 
     if primitive.map_primitive:
       sz = params['axis_size']
-      out_pvs = [None if pv is None else core.unmapped_aval(sz, pv)
+      out_pvs = [None if pv is None else core.maybe_unmapped_aval(sz, pv)
                  for pv in out_pvs]
 
     def todo(x):
       n = len(jaxpr.outvars)
       out_pv_consts, consts = x[:n], x[n:]
+      if primitive.map_primitive:
+        mapped_consts = tuple(core.get_aval(x) is not core.abstract_unit
+                              and params['axis_name'] in core.get_aval(x).named_shape
+                              for x in consts)
       trace = JaxprTrace(master, core.cur_sublevel())
       const_tracers = map(trace.new_instantiated_const, consts)
       out_tracers = [JaxprTracer(trace, PartialVal((out_pv, out_pv_const)), None)
@@ -259,7 +266,7 @@ class JaxprTrace(Trace):
 
       new_params = dict(params, call_jaxpr=convert_constvars_jaxpr(jaxpr))
       if primitive.map_primitive:
-        new_mapped_invars = (True,) * len(const_tracers) + (False,) * len(env)
+        new_mapped_invars = mapped_consts * len(const_tracers) + (False,) * len(env)
         new_params = dict(new_params, mapped_invars=new_mapped_invars)
       update_params = call_param_updaters.get(primitive)
       if update_params:
@@ -476,14 +483,13 @@ def new_eqn_recipe(invars: Sequence[JaxprTracer],
     primitive: the primitive.
     params: the primitive params
   """
-  # TODO(necula): move these checks to core.check_jaxpr, and call in more places
-  if primitive.call_primitive or primitive.map_primitive:
-    assert "call_jaxpr" in params
-  if primitive.map_primitive:
-    assert ("mapped_invars" in params and
-            len(params["mapped_invars"]) == len(params["call_jaxpr"].invars))
-    assert ("donated_invars" in params and
-            len(params["donated_invars"]) == len(params["call_jaxpr"].invars))
+  if not core.skip_checks:
+    in_avals = [t.pval.get_aval() if not t.pval.is_known()
+                else abstract_unit for t in invars]
+    if primitive.call_primitive:
+      core.check_call(primitive, in_avals, params)
+    if primitive.map_primitive:
+      core.check_map(primitive, in_avals, params)
   return JaxprEqnRecipe(object(), tuple(invars), map(ref, outvars), primitive,
                         params, source_info)
 
@@ -1020,14 +1026,16 @@ class DynamicJaxprTrace(core.Trace):
     with core.extend_axis_env(axis_name, axis_size):  # type: ignore
       jaxpr, reduced_out_avals, consts = trace_to_subjaxpr_dynamic(
           f, self.master, reduced_in_avals)
-    # jaxpr, out_avals = _pbroadcast_if_needed(jaxpr, reduced_out_avals)  # TODO
+      jaxpr = convert_constvars_jaxpr(jaxpr)
+      
+    out_avals = [core.maybe_unmapped_aval(axis_name, axis_size, a)
+                 for a in reduced_out_avals]
     out_tracers = [DynamicJaxprTracer(self, a) for a in out_avals]
     invars = map(self.getvar, tracers)
     outvars = map(self.getvar, out_tracers)
     constvars = map(self.getvar, map(self.instantiate_const, consts))
     new_mapped_invars = (False,) * len(consts) + params['mapped_invars']
-    new_params = dict(params, mapped_invars=new_mapped_invars,
-                      call_jaxpr=convert_constvars_jaxpr(jaxpr))
+    new_params = dict(params, mapped_invars=new_mapped_invars, call_jaxpr=jaxpr)
     update_params = call_param_updaters.get(map_primitive)
     if update_params:
       new_params = update_params(new_params, [True] * len(tracers))
@@ -1049,7 +1057,7 @@ def trace_to_jaxpr_dynamic(fun: lu.WrappedFun, in_avals: Sequence[AbstractValue]
   return jaxpr, out_avals, consts
 
 def trace_to_subjaxpr_dynamic(fun: lu.WrappedFun, master: core.MasterTrace,
-                       in_avals: Sequence[AbstractValue]):
+                              in_avals: Sequence[AbstractValue]):
   frame = JaxprStackFrame()
   with extend_jaxpr_stack(master, frame):
     trace = DynamicJaxprTrace(master, core.cur_sublevel())

@@ -103,9 +103,10 @@ class BatchTracer(Tracer):
       if aval is core.abstract_unit:
         return aval
       elif type(aval) is ShapedArray:
+        # TODO(jekbradbury): use core.mapped_aval for vmap with names
         assert 0 <= self.batch_dim < aval.ndim
         new_shape = tuple(np.delete(aval.shape, self.batch_dim))
-        return ShapedArray(new_shape, aval.dtype)
+        return ShapedArray(new_shape, aval.dtype, named_shape=aval.named_shape)
       else:
         raise TypeError(aval)
 
@@ -346,10 +347,12 @@ def bdim_at_front(x, bdim, size):
 
 
 def _promote_aval_rank(sz, aval):
+  # TODO(jekbradbury): use core.unmapped_aval for vmap with names
   if aval is core.abstract_unit:
     return core.abstract_unit
   else:
-    return ShapedArray((sz,) + aval.shape, aval.dtype)
+    return ShapedArray((sz,) + aval.shape, aval.dtype,
+                       named_shape=aval.named_shape)
 
 def batch_jaxpr(jaxpr, size, batched, instantiate):
   f = lu.wrap_init(core.jaxpr_as_fun(jaxpr))

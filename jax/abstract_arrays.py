@@ -53,6 +53,7 @@ for t in array_types:
 
 def zeros_like_shaped_array(aval):
   assert isinstance(aval, ShapedArray)
+  assert not aval.named_shape
   return np.broadcast_to(np.array(0, aval.dtype), aval.shape)
 
 ad_util.aval_zeros_likers[ShapedArray] = zeros_like_shaped_array

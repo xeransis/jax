@@ -68,6 +68,7 @@ class PapplyTracer(Tracer):
 
   @property
   def aval(self):
+    # TODO: use names and core.unmapped_aval or delete papply
     aval = raise_to_shaped(core.get_aval(self.val))
     if self.axis is not_sharded:
       return aval

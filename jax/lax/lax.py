@@ -84,8 +84,7 @@ def broadcast_shapes(*shapes):
 def _identity(x): return x
 
 def _promote_named_shape(*args):
-  named_shapes = [core.raise_to_shaped(core.get_aval(x)).named_shape
-                  for x in args]
+  named_shapes = [core.get_aval(x).named_shape for x in args]
   if not any(named_shapes):
     return args
   union_shape = {axis_name:size for named_shape in named_shapes
@@ -131,6 +130,7 @@ def sign(x: Array) -> Array:
 
 def nextafter(x1: Array, x2: Array) -> Array:
   r"""Returns the next representable value after `x1` in the direction of `x2`."""
+  x1, x2 = _promote_named_shape(x1, x2)
   return nextafter_p.bind(_brcast(x1, x2), _brcast(x2, x1))
 
 def floor(x: Array) -> Array:
@@ -187,10 +187,12 @@ def cos(x: Array) -> Array:
 def atan2(x: Array, y: Array) -> Array:
   r"""Elementwise arc tangent of two variables:
     :math:`\mathrm{atan}({x \over y})`."""
+  x, y = _promote_named_shape(x, y)
   return atan2_p.bind(x, y)
 
 def betainc(a: Array, b: Array, x: Array) -> Array:
   r"""Elementwise regularized incomplete beta integral."""
+  a, b, x = _promote_named_shape(a, b, x)
   return regularized_incomplete_beta_p.bind(a, b, x)
 
 def lgamma(x: Array) -> Array:
@@ -203,18 +205,22 @@ def digamma(x: Array) -> Array:
 
 def igamma(a: Array, x: Array) -> Array:
   r"""Elementwise regularized incomplete gamma function."""
+  a, x = _promote_named_shape(a, x)
   return igamma_p.bind(a, x)
 
 def igammac(a: Array, x: Array) -> Array:
   r"""Elementwise complementary regularized incomplete gamma function."""
+  a, x = _promote_named_shape(a, x)
   return igammac_p.bind(a, x)
 
 def igamma_grad_a(a: Array, x: Array) -> Array:
   r"""Elementwise derivative of the regularized incomplete gamma function."""
+  a, x = _promote_named_shape(a, x)
   return igamma_grad_a_p.bind(a, x)
 
 def random_gamma_grad(a: Array, x: Array) -> Array:
   r"""Elementwise derivative of samples from `Gamma(a, 1)`."""
+  a, x = _promote_named_shape(a, x)
   return random_gamma_grad_p.bind(a, x)
 
 def bessel_i0e(x: Array) -> Array:
@@ -261,6 +267,7 @@ def complex(x: Array, y: Array) -> Array:
 
   Builds a complex number from real and imaginary parts.
   """
+  x, y = _promote_named_shape(x, y)
   return complex_p.bind(_brcast(x, y), _brcast(y, x))
 
 def conj(x: Array) -> Array:
@@ -273,6 +280,7 @@ def abs(x: Array) -> Array:
 
 def pow(x: Array, y: Array) -> Array:
   r"""Elementwise power: :math:`x^y`."""
+  x, y = _promote_named_shape(x, y)
   return pow_p.bind(x, y)
 
 def integer_pow(x: Array, y: int) -> Array:
@@ -298,14 +306,17 @@ def bitwise_not(x: Array) -> Array:
 
 def bitwise_and(x: Array, y: Array) -> Array:
   r"""Elementwise AND: :math:`x \wedge y`."""
+  x, y = _promote_named_shape(x, y)
   return and_p.bind(x, y)
 
 def bitwise_or(x: Array, y: Array) -> Array:
   r"""Elementwise OR: :math:`x \vee y`."""
+  x, y = _promote_named_shape(x, y)
   return or_p.bind(x, y)
 
 def bitwise_xor(x: Array, y: Array) -> Array:
   r"""Elementwise exclusive OR: :math:`x \oplus y`."""
+  x, y = _promote_named_shape(x, y)
   return xor_p.bind(x, y)
 
 def population_count(x: Array) -> Array:
@@ -314,10 +325,12 @@ def population_count(x: Array) -> Array:
 
 def add(x: Array, y: Array) -> Array:
   r"""Elementwise addition: :math:`x + y`."""
+  x, y = _promote_named_shape(x, y)
   return add_p.bind(x, y)
 
 def sub(x: Array, y: Array) -> Array:
   r"""Elementwise subtraction: :math:`x - y`."""
+  x, y = _promote_named_shape(x, y)
   return sub_p.bind(x, y)
 
 def mul(x: Array, y: Array) -> Array:
@@ -327,10 +340,12 @@ def mul(x: Array, y: Array) -> Array:
 
 def div(x: Array, y: Array) -> Array:
   r"""Elementwise division: :math:`x \over y`."""
+  x, y = _promote_named_shape(x, y)
   return div_p.bind(x, y)
 
 def rem(x: Array, y: Array) -> Array:
   r"""Elementwise remainder: :math:`x \bmod y`."""
+  x, y = _promote_named_shape(x, y)
   return rem_p.bind(x, y)
 
 def max(x: Array, y: Array) -> Array:
@@ -338,6 +353,7 @@ def max(x: Array, y: Array) -> Array:
 
   For complex numbers, uses a lexicographic comparison on the
   `(real, imaginary)` pairs."""
+  x, y = _promote_named_shape(x, y)
   return max_p.bind(x, y)
 
 def min(x: Array, y: Array) -> Array:
@@ -345,34 +361,42 @@ def min(x: Array, y: Array) -> Array:
 
   For complex numbers, uses a lexicographic comparison on the
   `(real, imaginary)` pairs."""
+  x, y = _promote_named_shape(x, y)
   return min_p.bind(x, y)
 
 def shift_left(x: Array, y: Array) -> Array:
   r"""Elementwise left shift: :math:`x \ll y`."""
+  x, y = _promote_named_shape(x, y)
   return shift_left_p.bind(x, y)
 
 def shift_right_arithmetic(x: Array, y: Array) -> Array:
   r"""Elementwise arithmetic right shift: :math:`x \gg y`."""
+  x, y = _promote_named_shape(x, y)
   return shift_right_arithmetic_p.bind(x, y)
 
 def shift_right_logical(x: Array, y: Array) -> Array:
   r"""Elementwise logical right shift: :math:`x \gg y`."""
+  x, y = _promote_named_shape(x, y)
   return shift_right_logical_p.bind(x, y)
 
 def eq(x: Array, y: Array) -> Array:
   r"""Elementwise equals: :math:`x = y`."""
+  x, y = _promote_named_shape(x, y)
   return eq_p.bind(x, y)
 
 def ne(x: Array, y: Array) -> Array:
   r"""Elementwise not-equals: :math:`x \neq y`."""
+  x, y = _promote_named_shape(x, y)
   return ne_p.bind(x, y)
 
 def ge(x: Array, y: Array) -> Array:
   r"""Elementwise greater-than-or-equals: :math:`x \geq y`."""
+  x, y = _promote_named_shape(x, y)
   return ge_p.bind(x, y)
 
 def gt(x: Array, y: Array) -> Array:
   r"""Elementwise greater-than: :math:`x > y`."""
+  x, y = _promote_named_shape(x, y)
   return gt_p.bind(x, y)
 
 def le(x: Array, y: Array) -> Array:
@@ -381,6 +405,7 @@ def le(x: Array, y: Array) -> Array:
 
 def lt(x: Array, y: Array) -> Array:
   r"""Elementwise less-than: :math:`x < y`."""
+  x, y = _promote_named_shape(x, y)
   return lt_p.bind(x, y)
 
 def convert_element_type(operand: Array, new_dtype: DType) -> Array:
@@ -446,6 +471,7 @@ def clamp(min: Array, x: Array, max: Array) -> Array:
   x & \text{otherwise}
   \end{cases}`.
   """
+  min, x, max = _promote_named_shape(min, x, max)
   return clamp_p.bind(min, x, max)
 
 def concatenate(operands: Sequence[Array], dimension: int) -> Array:
@@ -463,6 +489,7 @@ def concatenate(operands: Sequence[Array], dimension: int) -> Array:
   Returns:
     An array containing the concatenation.
   """
+  operands = _promote_named_shape(*operands)
   return concatenate_p.bind(*operands, dimension=dimension)
 
 Precision = xla_client.PrecisionConfig.Precision
@@ -551,6 +578,7 @@ def conv_general_dilated(
   If `dimension_numbers` is `None`, the default is `('NCHW', 'OIHW', 'NCHW')`
   (for a 2D convolution).
   """
+  lhs, rhs = _promote_named_shape(lhs, rhs)
   dnums: ConvDimensionNumbers
   dnums = conv_dimension_numbers(lhs.shape, rhs.shape, dimension_numbers)
   if lhs_dilation is None:
@@ -629,6 +657,7 @@ def dot_general(lhs: Array, rhs: Array, dimension_numbers: DotDimensionNumbers,
   Returns:
     An array containing the result.
   """
+  lhs, rhs = _promote_named_shape(lhs, rhs)
   contract_dims_seq, batch_dims_seq = dimension_numbers
   contract_dims = tuple(map(lambda x: tuple(x), contract_dims_seq))
   batch_dims = tuple(map(lambda x: tuple(x), batch_dims_seq))
@@ -699,6 +728,7 @@ def pad(operand: Array, padding_value: Array,
   <https://www.tensorflow.org/xla/operation_semantics#pad>`_
   operator.
   """
+  operand, padding_value = _promote_named_shape(operand, padding_value)
   return pad_p.bind(operand, padding_value, padding_config=tuple(padding_config))
 
 def rev(operand: Array, dimensions: Sequence[int]) -> Array:
@@ -713,6 +743,7 @@ def select(pred: Array, on_true: Array, on_false: Array) -> Array:
   <https://www.tensorflow.org/xla/operation_semantics#select>`_
   operator.
   """
+  pred, on_true, on_false = _promote_named_shape(pred, on_true, on_false)
   return select_p.bind(pred, on_true, on_false)
 
 def slice(operand: Array, start_indices: Sequence[int],
@@ -749,6 +780,7 @@ def dynamic_slice(operand: Array, start_indices: Sequence[Array],
   Returns:
     An array containing the slice.
   """
+  operand, *start_indices = _promote_named_shape(operand, *start_indices)
   start_indices = _dynamic_slice_indices(operand, start_indices)
   return dynamic_slice_p.bind(operand, *start_indices,
                               slice_sizes=tuple(slice_sizes))
@@ -767,6 +799,8 @@ def dynamic_update_slice(operand: Array, update: Array,
   Returns:
     An array containing the slice.
   """
+  operand, update, *start_indices = _promote_named_shape(
+      operand, update, *start_indices)
   start_indices = _dynamic_slice_indices(operand, start_indices)
   return dynamic_update_slice_p.bind(operand, update, *start_indices)
 
@@ -822,6 +856,7 @@ def gather(operand: Array, start_indices: Array,
   Returns:
     An array containing the gather output.
   """
+  operand, start_indices = _promote_named_shape(operand, start_indices)
   return gather_p.bind(
       operand, start_indices, dimension_numbers=dimension_numbers,
       slice_sizes=canonicalize_shape(slice_sizes))
@@ -881,6 +916,8 @@ def scatter_add(operand: Array, scatter_indices: Array, updates: Array,
   Returns:
     An array containing the sum of `operand` and the scattered updates.
   """
+  operand, scatter_indices, updates = _promote_named_shape(
+      operand, scatter_indices, updates)
   jaxpr, consts = _reduction_jaxpr(add, _abstractify(_const(operand, 0)))
   return scatter_add_p.bind(
       operand, scatter_indices, updates, update_jaxpr=jaxpr,
@@ -915,6 +952,8 @@ def scatter_mul(operand: Array, scatter_indices: Array, updates: Array,
   Returns:
     An array containing the sum of `operand` and the scattered updates.
   """
+  operand, scatter_indices, updates = _promote_named_shape(
+      operand, scatter_indices, updates)
   jaxpr, consts = _reduction_jaxpr(mul, _abstractify(_const(operand, 1)))
   return scatter_mul_p.bind(
       operand, scatter_indices, updates, update_jaxpr=jaxpr,
@@ -949,6 +988,8 @@ def scatter_min(operand: Array, scatter_indices: Array, updates: Array,
   Returns:
     An array containing the sum of `operand` and the scattered updates.
   """
+  operand, scatter_indices, updates = _promote_named_shape(
+      operand, scatter_indices, updates)
   jaxpr, consts = _reduction_jaxpr(min, _abstractify(_const(operand, 0)))
   return scatter_min_p.bind(
       operand, scatter_indices, updates, update_jaxpr=jaxpr,
@@ -983,6 +1024,8 @@ def scatter_max(operand: Array, scatter_indices: Array, updates: Array,
   Returns:
     An array containing the sum of `operand` and the scattered updates.
   """
+  operand, scatter_indices, updates = _promote_named_shape(
+      operand, scatter_indices, updates)
   jaxpr, consts = _reduction_jaxpr(max, _abstractify(_const(operand, 0)))
   return scatter_max_p.bind(
       operand, scatter_indices, updates, update_jaxpr=jaxpr,
@@ -1023,6 +1066,8 @@ def scatter(operand: Array, scatter_indices: Array, updates: Array,
   Returns:
     An array containing the sum of `operand` and the scattered updates.
   """
+  operand, scatter_indices, updates = _promote_named_shape(
+      operand, scatter_indices, updates)
   jaxpr, consts = _reduction_jaxpr(_scatter_reduction_computation,
                                    _abstractify(_const(operand, 0)))
   return scatter_p.bind(
@@ -1074,6 +1119,7 @@ def reduce(operand: Array, init_value: Array, computation: Callable,
   operator.
   """
   monoid_reducer = _get_monoid_reducer(computation, init_value)
+  operand, init_value = _promote_named_shape(operand, init_value)
   if monoid_reducer:
     return monoid_reducer(operand, dimensions)
   else:
@@ -1159,6 +1205,7 @@ def reduce_window(operand: Array, init_value: Array, computation: Callable,
   if window_dilation is None:
     window_dilation = (1,) * len(window_dimensions)
   monoid_reducer = _get_monoid_window_reducer(computation, init_value)
+  operand, init_value = _promote_named_shape(operand, init_value)
   if monoid_reducer:
     return monoid_reducer(operand, window_dimensions, window_strides, padding,
                           base_dilation, window_dilation)
@@ -1251,6 +1298,7 @@ def _select_and_scatter(operand: Array, select: Callable,
                         init_value: Array, scatter: Callable,
                         base_dilation: Sequence[int],
                         window_dilation: Sequence[int]) -> Array:
+  operand, source, init_value = _promote_named_shape(operand, source, init_value)
   select_jaxpr, select_consts = _reduction_jaxpr(select, _abstractify(init_value))
   scatter_jaxpr, scatter_consts = _reduction_jaxpr(scatter, _abstractify(init_value))
   return select_and_scatter_p.bind(
@@ -1266,6 +1314,7 @@ def _select_and_scatter_add(source: Array, operand: Array,
                             window_dimensions: Shape,
                             window_strides: Sequence[int],
                             padding: Sequence[Tuple[int, int]]) -> Array:
+  source, operand = _promote_named_shape(source, operand)
   return select_and_scatter_add_p.bind(
       source, operand, select_prim=select_prim,
       window_dimensions=tuple(window_dimensions),
@@ -1278,6 +1327,7 @@ def _select_and_gather_add(tangents: Array, operand: Array,
                            padding: Sequence[Tuple[int, int]],
                            base_dilation: Sequence[int],
                            window_dilation: Sequence[int]) -> Array:
+  tangents, operand = _promote_named_shape(tangents, operand)
   return select_and_gather_add_p.bind(
       tangents, operand, select_prim=select_prim,
       window_dimensions=tuple(window_dimensions),
@@ -1320,6 +1370,7 @@ def sort(operand: Union[Array, Sequence[Array]], dimension: int = -1,
     operand : sorted version of the input or inputs.
   """
   if isinstance(operand, Sequence):
+    operand = _promote_named_shape(*operand)
     if len(operand) == 0:
       raise TypeError("Sort requires at least one operand")
     if not (1 <= num_keys <= len(operand)):
@@ -1337,6 +1388,7 @@ def sort(operand: Union[Array, Sequence[Array]], dimension: int = -1,
 def sort_key_val(keys: Array, values: Array, dimension: int = -1,
                  is_stable: bool = True) -> Tuple[Array, Array]:
   """Sorts ``keys`` along ``dimension`` and applies same permutation to ``values``."""
+  keys, values = _promote_named_shape(keys, values)
   dimension = _canonicalize_axis(dimension, len(keys.shape))
   k, v = sort_p.bind(keys, values, dimension=dimension, is_stable=is_stable, num_keys=1)
   return k, v
@@ -1917,7 +1969,8 @@ def standard_translate(name, c, *args, **kwargs):
 def standard_named_shape_rule(*avals):
   if not all(av1.named_shape == av2.named_shape
              for av1, av2 in zip(avals[:-1], avals[1:])):
-    raise TypeError("nothing good")
+    raise TypeError(f'A primitive encountered abstract values with mismatched '
+                    f'named axes: {avals}')
   return avals[0].named_shape
 
 
@@ -5356,8 +5409,8 @@ def _top_k_abstract_eval(operand, *, k):
     msg = "k argument to top_k must be no larger than minor dimension; {} vs {}"
     raise ValueError(msg.format(k, shape))
   shape[-1] = k
-  return (ShapedArray(shape, operand.dtype),
-          ShapedArray(shape, np.dtype(np.int32)))
+  return (ShapedArray(shape, operand.dtype, named_shape=operand.named_shape),
+          ShapedArray(shape, np.dtype(np.int32), named_shape=operand.named_shape))
 
 def _top_k_jvp(primals, tangents, *, k):
   operand, = primals
@@ -5567,6 +5620,7 @@ def rng_uniform(a, b, shape):
 
   This API may be removed at any time.
   """
+  a, b = _promote_named_shape(a, b)
   return rng_uniform_p.bind(a, b, shape=tuple(shape))
 
 def _rng_uniform_abstract_eval(a, b, *, shape):
@@ -5578,6 +5632,7 @@ def _rng_uniform_abstract_eval(a, b, *, shape):
     raise ValueError(
       "Arguments to rng_uniform must be scalars; got shapes {} and {}."
       .format(a.shape, b.shape))
+  # TODO: decide on named shape semantics
   return ShapedArray(shape, a.dtype)
 
 def _rng_uniform_translation_rule(c, a, b, *, shape):

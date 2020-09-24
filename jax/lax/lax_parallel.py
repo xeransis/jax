@@ -26,21 +26,23 @@ from jax import tree_util
 from jax.lax import lax
 from jax.abstract_arrays import ShapedArray, raise_to_shaped
 from jax.interpreters import ad
+from jax.interpreters import batching
 from jax.interpreters import parallel
 from jax.interpreters import xla
 from jax.interpreters import pxla
-from jax.util import partial, unzip2, prod
+from jax.util import partial, unzip2, prod, safe_map
 from jax.lib import xla_client as xc
 from jax.config import config
 
 from jax.interpreters.pxla import axis_index
 
 xops = xc.ops
+map = safe_map
 
 ### parallel traceables
 
 def psum(x, axis_name, *, axis_index_groups=None):
-  """Compute an all-reduce sum on ``x`` over the pmapped axis ``axis_name``.
+  """Compute an all-reduce sum on ``x`` over the mapped axis ``axis_name``.
 
   If ``x`` is a pytree then the result is equivalent to mapping this function to
   each leaf in the tree.
@@ -49,7 +51,7 @@ def psum(x, axis_name, *, axis_index_groups=None):
 
   Args:
     x: array(s) with a mapped axis named ``axis_name``.
-    axis_name: hashable Python object used to name a pmapped axis (see the
+    axis_name: hashable Python object used to name a mapped axis (see the
       :func:`jax.pmap` documentation for more details).
     axis_index_groups: optional list of lists containing axis indices (e.g. for
       an axis of size 4, [[0, 1], [2, 3]] would perform psums over the first
@@ -71,12 +73,19 @@ def psum(x, axis_name, *, axis_index_groups=None):
   >>> print(y)
   [ 0.          0.16666667  0.33333334  0.5       ]
   """
-  _validate_axis_index_groups(axis_index_groups)
+  keepdims = _validate_axis_index_groups(axis_index_groups)
   leaves, treedef = tree_util.tree_flatten(x)
   leaves = [lax.convert_element_type(l, np.int32)
             if dtypes.dtype(l) == np.bool_ else l for l in leaves]
-  out_flat = psum_p.bind(*leaves, axis_name=axis_name, keepdims=True,
-                         axis_index_groups=axis_index_groups)
+  axis_names = axis_name if isinstance(axis_name, (tuple, list)) else [axis_name]
+  if all(name not in core.get_aval(l).named_shape
+         for l in leaves for name in axis_names):
+    size = prod([core.axis_frame(name).size for name in axis_names])  # type: ignore
+    out_flat = [size * l for l in leaves]
+  else:
+    leaves = [maybe_pbroadcast(l, axis_name) for l in leaves]
+    out_flat = psum_p.bind(*leaves, axis_name=axis_name, keepdims=keepdims,
+                          axis_index_groups=axis_index_groups)
   return tree_util.tree_unflatten(treedef, out_flat)
 
 def pmean(x, axis_name, *, axis_index_groups=None):
@@ -131,9 +140,11 @@ def pmax(x, axis_name, *, axis_index_groups=None):
     Array(s) with the same shape as ``x`` representing the result of an
     all-reduce max along the axis ``axis_name``.
   """
-  _validate_axis_index_groups(axis_index_groups)
+  keepdims = _validate_axis_index_groups(axis_index_groups)
+  x = tree_util.tree_map(partial(maybe_pbroadcast, axis_name=axis_name), x)
   return tree_util.tree_map(partial(
-      pmax_p.bind, axis_name=axis_name, axis_index_groups=axis_index_groups), x)
+      pmax_p.bind, axis_name=axis_name, keepdims=keepdims,
+      axis_index_groups=axis_index_groups), x)
 
 def pmin(x, axis_name, *, axis_index_groups=None):
   """Compute an all-reduce min on ``x`` over the pmapped axis ``axis_name``.
@@ -154,19 +165,22 @@ def pmin(x, axis_name, *, axis_index_groups=None):
     Array(s) with the same shape as ``x`` representing the result of an
     all-reduce min along the axis ``axis_name``.
   """
-  _validate_axis_index_groups(axis_index_groups)
+  keepdims = _validate_axis_index_groups(axis_index_groups)
+  x = tree_util.tree_map(partial(maybe_pbroadcast, axis_name=axis_name), x)
   return tree_util.tree_map(partial(
-      pmin_p.bind, axis_name=axis_name, axis_index_groups=axis_index_groups), x)
+      pmin_p.bind, axis_name=axis_name, keepdims=keepdims,
+      axis_index_groups=axis_index_groups), x)
 
 def _validate_axis_index_groups(axis_index_groups):
   if axis_index_groups is None:
-    return
+    return False
   len_0 = len(axis_index_groups[0])
   if any(len(g) != len_0 for g in axis_index_groups):
     raise ValueError("axis_index_groups must all be the same size")
   axis_space = range(len_0 * len(axis_index_groups))
   if set(i for g in axis_index_groups for i in g) != set(axis_space):
     raise ValueError("axis_index_groups must cover all indices exactly once")
+  return True
 
 def ppermute(x, axis_name, perm):
   """Perform a collective permutation according to the permutation ``perm``.
@@ -218,7 +232,6 @@ def pshuffle(x, axis_name, perm):
   if set(perm) != set(range(len(perm))):
     raise ValueError(f"`perm` does not represent a permutation: {perm}")
   return ppermute(x, axis_name, list(zip(perm, range(len(perm)))))
-
 
 def pswapaxes(x, axis_name, axis):
   """Swap the pmapped axis ``axis_name`` with the unmapped axis ``axis``.
@@ -286,19 +299,70 @@ def all_to_all(x, axis_name, split_axis, concat_axis):
                              axis_name=axis_name)
   return tree_util.tree_map(bind, x)
 
+def pbroadcast(x, axis_name):
+  """Broadcast x along a mapped axis.
+
+  If ``x`` is a pytree then the result is equivalent to mapping this function to
+  each leaf in the tree.
+
+  This operation is invoked when ``pmap`` lifts closed-over values or arguments
+  with ``in_axes=None``, as well as performed implicitly in ``psum`` with
+  ``keepdims=True``.
+
+  It is the transpose of ``psum`` with ``keepdims=False``.
+
+  Args:
+    x: array(s) not already mapped over ``axis_name``.
+    axis_name: hashable Python object used to name a mapped axis (see the
+      :func:`jax.pmap` documentation for more details).
+
+  Returns:
+    Array(s) mapped over ``axis_name``, with the same value for each replica.
+  """
+  leaves, treedef = tree_util.tree_flatten(x)
+  axis_names = axis_name if isinstance(axis_name, (tuple, list)) else [axis_name]
+  for axis_name in axis_names:
+    axis_size = core.axis_frame(axis_name).size
+    leaves = pbroadcast_p.bind(*leaves, axis_name=axis_name, axis_size=axis_size)
+  return tree_util.tree_unflatten(treedef, leaves)
+
+def maybe_pbroadcast(x, axis_name):
+  if isinstance(axis_name, (list, tuple)):
+    for name in axis_name:
+      x = maybe_pbroadcast(x, name)
+    return x
+  aval = core.get_aval(x)
+  if aval is core.abstract_unit or axis_name in aval.named_shape:
+    return x
+  else:
+    return pbroadcast(x, axis_name)
+
+def maybe_pbroadcast_all(x):
+  for axis_frame in core.thread_local_state.trace_state.axis_env:
+    x = maybe_pbroadcast(x, axis_frame.name)
+  return x
+
 ### parallel primitives
 
 def _allreduce_soft_pmap_rule(prim, reducer, vals, mapped, chunk_size,
-                              *, axis_name, axis_index_groups):
+                              *, axis_name, keepdims, axis_index_groups):
   if axis_index_groups is not None:
     raise NotImplementedError("soft_pmap does not yet support axis_index_groups")
+  assert all(mapped)
   reduced_vals = [reducer(x, [0]) if m else x for x, m in zip(vals, mapped)]
-  outs = prim.bind(*reduced_vals, axis_name=axis_name,
+  if keepdims:
+    reduced_vals = [lax.broadcast(x, (chunk_size,)) if m else x
+                    for x, m in zip(reduced_vals, mapped)]
+  outs = prim.bind(*reduced_vals, axis_name=axis_name, keepdims=keepdims,
                    axis_index_groups=axis_index_groups)
-  return outs, (False,) * len(vals)
+  if prim.multiple_results:
+    return outs, (keepdims,) * len(vals)
+  else:
+    return outs, keepdims
 
 def _allreduce_translation_rule(prim, c, val, *, axis_name, axis_index_groups,
-                                axis_env, platform):
+                                keepdims, axis_env, platform):
+  del keepdims
   replica_groups = _replica_groups(axis_env, axis_name, axis_index_groups)
   dtype = c.get_shape(val).numpy_dtype()
   scalar = ShapedArray((), dtype)
@@ -315,10 +379,11 @@ def _replica_groups(axis_env, axis_name, axis_index_groups):
   return replica_groups
 
 # psum translation rule has special handling for complex dtypes
-def _psum_translation_rule(c, *args, axis_name, axis_index_groups, axis_env,
-                           platform):
+def _psum_translation_rule(c, *args, axis_name, keepdims, axis_index_groups,
+                           axis_env, platform):
   if platform in ("cpu", "tpu"):
     return _notuple_psum_translation_rule(c, *args, axis_name=axis_name,
+                                          keepdims=keepdims,
                                           axis_index_groups=axis_index_groups,
                                           axis_env=axis_env, platform=platform)
 
@@ -358,38 +423,47 @@ def _psum_translation_rule(c, *args, axis_name, axis_index_groups, axis_env,
 # cross-task communication either.
 # TODO(b/155446630): An XLA:TPU optimization pass also doesn't support
 # tuple all-reduce yet. Meanwhile, rely on deterministic compiler behavior.
-def _notuple_psum_translation_rule(c, *args, axis_name, axis_env,
+def _notuple_psum_translation_rule(c, *args, axis_name, keepdims, axis_env,
                                    axis_index_groups, platform):
   def _translate(val):
     psum = partial(_allreduce_translation_rule, lax.add_p, c,
-                   axis_name=axis_name, axis_env=axis_env,
+                   axis_name=axis_name, keepdims=keepdims, axis_env=axis_env,
                    axis_index_groups=axis_index_groups, platform=platform)
     dtype = c.get_shape(val).numpy_dtype()
     if dtypes.issubdtype(dtype, np.complexfloating):
       return xops.Complex(psum(xops.Real(val)), psum(xops.Imag(val)))
     else:
       return psum(val)
-  return xops.Tuple(c, list(map(_translate, args)))
+  return xops.Tuple(c, map(_translate, args))
 
-# TODO(jekbradbury): add tuple pbroadcast
-def _psum_transpose_rule(cts, _, axis_name, axis_index_groups):
+def _psum_transpose_rule(cts, axis_name, keepdims, axis_index_groups):
   nonzero_out_cts, treedef = tree_util.tree_flatten(cts)
-  nonzero_in_cts = [lax.pbroadcast(ct, axis_name) for ct in nonzero_out_cts]
+  if keepdims:  # nontrivial axis_index_groups
+    nonzero_in_cts = psum(nonzero_out_cts, axis_name=axis_name,
+                          axis_index_groups=axis_index_groups)
+  else:
+    axis_size = core.axis_frame(axis_name).size
+    nonzero_in_cts = pbroadcast_p.bind(
+      *nonzero_out_cts, axis_name=axis_name, axis_size=axis_size)
   return tree_util.tree_unflatten(treedef, nonzero_in_cts)
 
 def _psum_abstract_eval(*avals, axis_name, keepdims, axis_index_groups):
   if not keepdims and axis_index_groups is not None:
     raise ValueError(
-        f'unsupported psum with keepdims and '
+        f'unsupported allreduce with keepdims=False and '
         f'axis_index_groups {axis_index_groups}')
-  return [raise_to_shaped(aval) if keepdims
-          else _remove_named_axis(axis_name, raise_to_shaped(aval))
+  avals = map(raise_to_shaped, avals)
+  axis_names = axis_name if isinstance(axis_name, (tuple, list)) else [axis_name]
+  assert all(name in aval.named_shape for aval in avals for name in axis_names)
+  return [aval if keepdims else _remove_named_axis(axis_name, aval)
           for aval in avals]
 
 def _remove_named_axis(axis_name, aval):
   assert isinstance(aval, ShapedArray)
   named_shape = dict(aval.named_shape)
-  del named_shape[axis_name]
+  axis_names = axis_name if isinstance(axis_name, (list, tuple)) else [axis_name]
+  for axis_name in axis_names:
+    del named_shape[axis_name]
   return ShapedArray(aval.shape, aval.dtype, weak_type=aval.weak_type,
                      named_shape=named_shape)
 
@@ -405,8 +479,17 @@ ad.deflinear(psum_p, _psum_transpose_rule)
 pxla.multi_host_supported_collectives.add(psum_p)
 
 
+def _allreduce_abstract_eval(aval, *, axis_name, keepdims, axis_index_groups):
+  if not keepdims and axis_index_groups is not None:
+    raise ValueError(
+        f'unsupported allreduce with keepdims=False and '
+        f'axis_index_groups {axis_index_groups}')
+  aval = raise_to_shaped(aval)
+  assert axis_name in aval.named_shape
+  return aval if keepdims else _remove_named_axis(axis_name, aval)
+
 pmax_p = core.Primitive('pmax')
-pmax_p.def_abstract_eval(lambda x, **params: raise_to_shaped(x))
+pmax_p.def_abstract_eval(_allreduce_abstract_eval)
 xla.parallel_translations[pmax_p] = \
     partial(_allreduce_translation_rule, lax.max_p)
 # pxla.split_axis_rules[pmax_p] = \
@@ -414,7 +497,7 @@ xla.parallel_translations[pmax_p] = \
 
 
 pmin_p = core.Primitive('pmin')
-pmin_p.def_abstract_eval(lambda x, **params: raise_to_shaped(x))
+pmin_p.def_abstract_eval(_allreduce_abstract_eval)
 xla.parallel_translations[pmin_p] = \
     partial(_allreduce_translation_rule, lax.min_p)
 # pxla.split_axis_rules[pmin_p] = \
@@ -440,8 +523,13 @@ def _ppermute_transpose_rule(t, perm, axis_name):
   inverse_perm = list(zip(dsts, srcs))
   return [ppermute(t, axis_name=axis_name, perm=inverse_perm)]
 
+def _collective_abstract_eval_rule(aval, *, axis_name, **params):
+  aval = raise_to_shaped(aval)
+  assert axis_name in aval.named_shape
+  return aval
+
 ppermute_p = core.Primitive('ppermute')
-ppermute_p.def_abstract_eval(lambda x, **params: raise_to_shaped(x))
+ppermute_p.def_abstract_eval(_collective_abstract_eval_rule)
 ad.deflinear(ppermute_p, _ppermute_transpose_rule)
 xla.parallel_translations[ppermute_p] = _ppermute_translation_rule
 pxla.multi_host_supported_collectives.add(ppermute_p)
@@ -482,32 +570,43 @@ def _moveaxis(src, dst, x):
   return lax.transpose(x, perm)
 
 all_to_all_p = core.Primitive('all_to_all')
-all_to_all_p.def_abstract_eval(lambda x, **params: raise_to_shaped(x))
+all_to_all_p.def_abstract_eval(_collective_abstract_eval_rule)
 xla.parallel_translations[all_to_all_p] = _all_to_all_translation_rule
 ad.deflinear(all_to_all_p, _all_to_all_transpose_rule)
 pxla.multi_host_supported_collectives.add(all_to_all_p)
 
 
-def pbroadcast(x, axis_name):
-  return pbroadcast_p.bind(x, axis_name=axis_name)
+def _pbroadcast_abstract_eval(*avals, axis_name, axis_size):
+  avals = [core.raise_to_shaped(aval) for aval in avals]
+  assert all(axis_name not in aval.named_shape for aval in avals)
+  return [ShapedArray(aval.shape, aval.dtype,
+                      named_shape={axis_name:axis_size, **aval.named_shape})
+          for aval in avals]
 
-def _pbroadcast_abstract_eval(aval, *, axis_name):
-  aval = core.raise_to_shaped(aval)
-  assert axis_name not in aval.named_shape
-  size = core.axis_frame(axis_name).size
-  named_shape = {axis_name:size, **aval.named_shape}
-  return ShapedArray(aval.shape, aval.dtype, named_shape=named_shape)
+def _pbroadcast_translation_rule(c, *xla_xs, axis_name, axis_size, axis_env, platform):
+  return xops.Tuple(c, xla_xs)
 
-def _pbroadcast_translation_rule(c, xla_x, *, axis_name):
-  return xla_x
+def _pbroadcast_transpose_rule(cts, axis_name, axis_size):
+  return psum(cts, axis_name=axis_name, axis_index_groups=None)
 
-def _pbroadcast_transpose_rule(ct, *, axis_name):
-  return [psum(ct, axis_name)]
+def _pbroadcast_batching_rule(batched_args, batch_dims, **params):
+  # TODO(jekbradbury): rebase for named vmap
+  return pbroadcast_p.bind(*batched_args, **params), batch_dims
+
+def _pbroadcast_soft_pmap_rule(vals, mapped, chunk_size, *, axis_name, axis_size):
+  assert not any(mapped)
+  broadcasted_vals = [lax.broadcast(x, (chunk_size,)) for x in vals]
+  outs = pbroadcast_p.bind(*broadcasted_vals, axis_name=axis_name,
+                           axis_size=axis_size // chunk_size)
+  return outs, (True,) * len(vals)
 
 pbroadcast_p = core.Primitive('pbroadcast')
+pbroadcast_p.multiple_results = True
 pbroadcast_p.def_abstract_eval(_pbroadcast_abstract_eval)
-xla.translations[pbroadcast_p] = _pbroadcast_translation_rule
+xla.parallel_translations[pbroadcast_p] = _pbroadcast_translation_rule
+pxla.soft_pmap_rules[pbroadcast_p] = _pbroadcast_soft_pmap_rule
 ad.deflinear(pbroadcast_p, _pbroadcast_transpose_rule)
+batching.primitive_batchers[pbroadcast_p] = _pbroadcast_batching_rule
 
 
 ### papply rules
@@ -985,18 +1084,3 @@ parallel.papply_primitive_rules[lax.broadcast_in_dim_p] = \
 parallel.papply_primitive_rules[lax.pad_p] = _pad_papply_rule
 parallel.papply_primitive_rules[lax.slice_p] = _slice_papply_rule
 parallel.papply_primitive_rules[lax.gather_p] = _gather_papply_rule
-
-
-@config.omnistaging_enablers.append
-def omnistaging_enabler() -> None:
-  # We set a special bind rule for psum so that psum(1, 'i') can be evaluated at
-  # tracing time.
-  @psum_p.def_custom_bind
-  def psum_bind(*args, axis_name, **params):
-    if all(not isinstance(x, core.Tracer) for x in args):
-      if type(axis_name) is tuple:
-        size = prod([core.axis_frame(name).size for name in axis_name])  # type: ignore
-      else:
-        size = core.axis_frame(axis_name).size  # type: ignore
-      return tuple(size * x for x in args)
-    return core.Primitive.bind(psum_p, *args, axis_name=axis_name, **params)

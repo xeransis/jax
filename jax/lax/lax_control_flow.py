@@ -47,7 +47,8 @@ from jax.lib import xla_client
 from jax.util import (partial, unzip2, unzip4, safe_map, safe_zip, split_list,
                       split_dict, cache, extend_name_stack)
 from jax.tree_util import (tree_flatten, tree_unflatten, treedef_is_leaf,
-                           treedef_children, treedef_tuple, tree_multimap)
+                           treedef_children, treedef_tuple, tree_multimap,
+                           tree_map)
 from jax import ad_util
 from jax.config import config
 
@@ -282,13 +283,16 @@ def while_loop(cond_fun: Callable[[T], bool],
       pass
 
   init_vals, in_tree = tree_flatten((init_val,))
+  # TODO(jekbradbury): don't pbroadcast loop carry inits (maybe fixpoint)
+  init_vals = _map(jax.lax.lax_parallel.maybe_pbroadcast_all, init_vals)
   init_avals = tuple(_map(_abstractify, init_vals))
   cond_jaxpr, cond_consts, cond_tree = _initial_style_jaxpr(cond_fun, in_tree, init_avals)
   body_jaxpr, body_consts, body_tree = _initial_style_jaxpr(body_fun, in_tree, init_avals)
   if not treedef_is_leaf(cond_tree) or len(cond_jaxpr.out_avals) != 1:
     msg = "cond_fun must return a boolean scalar, but got pytree {}."
     raise TypeError(msg.format(cond_tree))
-  if cond_jaxpr.out_avals[0].strip_weak_type() != ShapedArray((), np.bool_):
+  cond_aval = cond_jaxpr.out_avals[0].strip_weak_type()
+  if cond_aval.dtype != np.bool_ or cond_aval.shape != ():
     msg = "cond_fun must return a boolean scalar, but got output type(s) {}."
     raise TypeError(msg.format(cond_jaxpr.out_avals))
 
@@ -327,6 +331,7 @@ def _while_loop_translation_rule(c, axis_env, name_stack, avals, backend, *args,
                                  cond_jaxpr.literals),
                             extend_name_stack(name_stack, 'cond'), *(x + z))
   if batched:
+    # TODO: support batching (exclusively?) via named axes
     scalar = ShapedArray((), np.bool_)
     or_ = xla.primitive_subcomputation(lax.or_p, scalar, scalar)
     pred = xops.Reduce(cond_c, [pred], [xb.constant(cond_c, np.array(False))], or_,
@@ -1199,6 +1204,8 @@ def scan(f, init, xs, length=None, reverse=False, unroll=1):
     loop carry value and the second element represents the stacked outputs of
     the second output of ``f`` when scanned over the leading axis of the inputs.
   """
+  # TODO(jekbradbury): don't pbroadcast loop carry inits (maybe fixpoint)
+  init = tree_map(jax.lax.lax_parallel.maybe_pbroadcast_all, init)
   init_flat, init_tree = tree_flatten(init)
   xs_flat, xs_tree = tree_flatten(xs)
   in_flat, in_tree = tree_flatten((init, xs))
@@ -1242,9 +1249,10 @@ def scan(f, init, xs, length=None, reverse=False, unroll=1):
     return carry, ys
 
   carry_avals = tuple(_map(_abstractify, init_flat))
-  x_shapes = [masking.padded_shape_as_value(x.shape[1:]) for x in xs_flat]
-  x_dtypes = [x.dtype for x in xs_flat]
-  x_avals = tuple(_map(ShapedArray, x_shapes, x_dtypes))
+  x_avals = tuple(ShapedArray(masking.padded_shape_as_value(x.shape[1:]),
+                              x.dtype,
+                              named_shape=core.get_aval(x).named_shape)
+                  for x in xs_flat)
   jaxpr, consts, out_tree = _initial_style_jaxpr(f, in_tree, carry_avals + x_avals)
   out_tree_children = out_tree.children()
   if len(out_tree_children) != 2:
@@ -1445,15 +1453,15 @@ def _prepend_dim_to_aval(sz, aval):
   if aval is core.abstract_unit:
     return aval
   elif isinstance(aval, ShapedArray):
-    return ShapedArray((sz, *aval.shape), aval.dtype)
+    return ShapedArray((sz, *aval.shape), aval.dtype,
+                       named_shape=aval.named_shape)
   else:
     raise TypeError(f'Prepending dim {sz} to aval {aval}')
 
 def _scan_abstract_eval(*args, reverse, length, num_consts, num_carry, jaxpr,
                         linear, unroll):
   carry_avals, y_avals = split_list(jaxpr.out_avals, [num_carry])
-  ys_avals = [ShapedArray((length,) + aval.shape, aval.dtype)
-              if aval is not core.abstract_unit else aval for aval in y_avals]
+  ys_avals = _map(partial(_prepend_dim_to_aval, length), y_avals)
   return carry_avals + ys_avals
 
 def _scan_jvp(primals, tangents, reverse, length, jaxpr, num_consts, num_carry,
@@ -1597,7 +1605,7 @@ def _scan_partial_eval(trace, *tracers, reverse, length, num_consts, num_carry,
   new_tracers = [trace.instantiate_const(t) if uk else trace.new_instantiated_literal(core.unit)
                  for uk, t in zip(unknowns, tracers)]
   carry_avals, y_avals = split_list(jaxpr.out_avals, [num_carry])
-  ys_avals = _map(partial(_promote_aval_rank, length), y_avals)
+  ys_avals = _map(partial(_prepend_dim_to_aval, length), y_avals)
   out_avals = carry_avals + ys_avals
   out_pvs = [aval if uk else None for aval, uk in zip(out_avals, out_uk)]
 
@@ -1619,12 +1627,6 @@ def _scan_partial_eval(trace, *tracers, reverse, length, num_consts, num_carry,
   for t in out_tracers: t.recipe = eqn
   return out_tracers
 
-def _promote_aval_rank(sz, aval):
-  if aval is core.abstract_unit:
-    return core.abstract_unit
-  else:
-    return ShapedArray((sz,) + aval.shape, aval.dtype)
-
 def _scan_transpose(cts, *args, reverse, length, num_consts, num_carry, jaxpr,
                     linear, unroll):
   # we've only implemented transposing scans with specific lin/nonlin patterns
@@ -1645,7 +1647,7 @@ def _scan_transpose(cts, *args, reverse, length, num_consts, num_carry, jaxpr,
   assert not any(ad.is_undefined_primal(r) for r in eres)
 
   carry_avals, y_avals = split_list(jaxpr.out_avals, [num_carry])
-  ys_avals = _map(partial(_promote_aval_rank, length), y_avals)
+  ys_avals = _map(partial(_prepend_dim_to_aval, length), y_avals)
   ct_carry, ct_ys = split_list(cts, [num_carry])
   ct_carry = _map(ad.instantiate_zeros_aval, carry_avals, ct_carry)
   ct_ys = _map(ad.instantiate_zeros_aval, ys_avals, ct_ys)
@@ -1802,7 +1804,9 @@ def _scan_typecheck(bind_time, *avals, reverse, length, num_consts, num_carry,
   const_avals_jaxpr, init_avals_jaxpr, x_avals_jaxpr = split_list(
       jaxpr.in_avals, [num_consts, num_carry])
   carry_avals_jaxpr, _ = split_list(jaxpr.out_avals, [num_carry])
-  x_avals_mapped = _map(partial(core.mapped_aval, length), x_avals)
+  x_avals_mapped = [core.abstract_unit if aval is core.abstract_unit else
+                    ShapedArray(aval.shape[1:], aval.dtype, named_shape=aval.named_shape)
+                    for aval in x_avals]
 
   core.typecheck_assert(
       all(_map(core.typematch, init_avals_jaxpr, carry_avals_jaxpr)),
