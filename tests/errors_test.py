@@ -19,7 +19,7 @@ import unittest
 
 from absl.testing import absltest
 
-from jax import grad, jit, vmap
+from jax import grad, jit, vmap, lax
 import jax.numpy as jnp
 from jax import test_util as jtu
 from jax import traceback_util
@@ -120,6 +120,16 @@ class FilteredTracebackTest(jtu.JaxTestCase):
         ('<lambda>', 'f = lambda: outermost'),
         ('outermost', 'return 2 + inbetween(x)'),
         ('inbetween', 'return 1 + grad(innermost)(x)')])
+
+  def test_lax_primitive_bind(self):
+    if not traceback_util.filtered_tracebacks_supported():
+      raise unittest.SkipTest('Filtered tracebacks not supported')
+
+    def f():
+      return lax.div(True, False)
+
+    check_filtered_stack_trace(self, TypeError, f, [
+        ('f', 'return lax.div(True, False)')])
 
   def test_cause_chain(self):
     if not traceback_util.filtered_tracebacks_supported():

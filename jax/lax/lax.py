@@ -41,6 +41,7 @@ from ..interpreters import invertible_ad as iad
 from ..interpreters import batching
 from ..interpreters import masking
 from ..util import cache, safe_zip, partial, prod, safe_map, canonicalize_axis
+from ..traceback_util import api_boundary
 from ..tree_util import tree_map
 from ..lib import pytree
 from ..lib import xla_bridge
@@ -86,10 +87,12 @@ def _identity(x): return x
 
 ### traceables
 
+@api_boundary
 def neg(x: Array) -> Array:
   r"""Elementwise negation: :math:`-x`."""
   return neg_p.bind(x)
 
+@api_boundary
 def sign(x: Array) -> Array:
   r"""Elementwise sign.
 
@@ -114,6 +117,7 @@ def sign(x: Array) -> Array:
   """
   return sign_p.bind(x)
 
+@api_boundary
 def nextafter(x1: Array, x2: Array) -> Array:
   r"""Returns the next representable value after `x1` in the direction of `x2`.
 
@@ -129,14 +133,17 @@ def nextafter(x1: Array, x2: Array) -> Array:
   """
   return nextafter_p.bind(_brcast(x1, x2), _brcast(x2, x1))
 
+@api_boundary
 def floor(x: Array) -> Array:
   r"""Elementwise floor: :math:`\left\lfloor x \right\rfloor`."""
   return floor_p.bind(x)
 
+@api_boundary
 def ceil(x: Array) -> Array:
   r"""Elementwise ceiling: :math:`\left\lceil x \right\rceil`."""
   return ceil_p.bind(x)
 
+@api_boundary
 def round(x: Array) -> Array:
   r"""Elementwise round.
 
@@ -144,6 +151,7 @@ def round(x: Array) -> Array:
   away from zero."""
   return round_p.bind(x)
 
+@api_boundary
 def is_finite(x: Array) -> Array:
   r"""Elementwise :math:`\mathrm{isfinite}`.
 
@@ -152,92 +160,113 @@ def is_finite(x: Array) -> Array:
   """
   return is_finite_p.bind(x)
 
+@api_boundary
 def exp(x: Array) -> Array:
   r"""Elementwise exponential: :math:`e^x`."""
   return exp_p.bind(x)
 
+@api_boundary
 def expm1(x: Array) -> Array:
   r"""Elementwise :math:`e^{x} - 1`."""
   return expm1_p.bind(x)
 
+@api_boundary
 def log(x: Array) -> Array:
   r"""Elementwise natural logarithm: :math:`\mathrm{log}(x)`."""
   return log_p.bind(x)
 
+@api_boundary
 def log1p(x: Array) -> Array:
   r"""Elementwise :math:`\mathrm{log}(1 + x)`."""
   return log1p_p.bind(x)
 
+@api_boundary
 def tanh(x: Array) -> Array:
   r"""Elementwise hyperbolic tangent: :math:`\mathrm{tanh}(x)`."""
   return tanh_p.bind(x)
 
+@api_boundary
 def sin(x: Array) -> Array:
   r"""Elementwise sine: :math:`\mathrm{sin}(x)`."""
   return sin_p.bind(x)
 
+@api_boundary
 def cos(x: Array) -> Array:
   r"""Elementwise cosine: :math:`\mathrm{cos}(x)`."""
   return cos_p.bind(x)
 
+@api_boundary
 def atan2(x: Array, y: Array) -> Array:
   r"""Elementwise arc tangent of two variables:
     :math:`\mathrm{atan}({x \over y})`."""
   return atan2_p.bind(x, y)
 
+@api_boundary
 def betainc(a: Array, b: Array, x: Array) -> Array:
   r"""Elementwise regularized incomplete beta integral."""
   return regularized_incomplete_beta_p.bind(a, b, x)
 
+@api_boundary
 def lgamma(x: Array) -> Array:
   r"""Elementwise log gamma: :math:`\mathrm{log}(\Gamma(x))`."""
   return lgamma_p.bind(x)
 
+@api_boundary
 def digamma(x: Array) -> Array:
   r"""Elementwise digamma: :math:`\psi(x)`."""
   return digamma_p.bind(x)
 
+@api_boundary
 def igamma(a: Array, x: Array) -> Array:
   r"""Elementwise regularized incomplete gamma function."""
   return igamma_p.bind(a, x)
 
+@api_boundary
 def igammac(a: Array, x: Array) -> Array:
   r"""Elementwise complementary regularized incomplete gamma function."""
   return igammac_p.bind(a, x)
 
+@api_boundary
 def igamma_grad_a(a: Array, x: Array) -> Array:
   r"""Elementwise derivative of the regularized incomplete gamma function."""
   return igamma_grad_a_p.bind(a, x)
 
+@api_boundary
 def random_gamma_grad(a: Array, x: Array) -> Array:
   r"""Elementwise derivative of samples from `Gamma(a, 1)`."""
   return random_gamma_grad_p.bind(a, x)
 
+@api_boundary
 def bessel_i0e(x: Array) -> Array:
   r"""Exponentially scaled modified Bessel function of order 0:
   :math:`\mathrm{i0e}(x) = e^{-|x|} \mathrm{i0}(x)`
   """
   return bessel_i0e_p.bind(x)
 
+@api_boundary
 def bessel_i1e(x: Array) -> Array:
   r"""Exponentially scaled modified Bessel function of order 1:
   :math:`\mathrm{i1e}(x) = e^{-|x|} \mathrm{i1}(x)`
   """
   return bessel_i1e_p.bind(x)
 
+@api_boundary
 def erf(x: Array) -> Array:
   r"""Elementwise error function: :math:`\mathrm{erf}(x)`."""
   return erf_p.bind(x)
 
+@api_boundary
 def erfc(x: Array) -> Array:
   r"""Elementwise complementary error function:
     :math:`\mathrm{erfc}(x) = 1 - \mathrm{erf}(x)`."""
   return erfc_p.bind(x)
 
+@api_boundary
 def erf_inv(x: Array) -> Array:
   r"""Elementwise inverse error function: :math:`\mathrm{erf}^{-1}(x)`."""
   return erf_inv_p.bind(x)
 
+@api_boundary
 def real(x: Array) -> Array:
   r"""Elementwise extract real part: :math:`\mathrm{Re}(x)`.
 
@@ -245,6 +274,7 @@ def real(x: Array) -> Array:
   """
   return real_p.bind(x)
 
+@api_boundary
 def imag(x: Array) -> Array:
   r"""Elementwise extract imaginary part: :math:`\mathrm{Im}(x)`.
 
@@ -252,6 +282,7 @@ def imag(x: Array) -> Array:
   """
   return imag_p.bind(x)
 
+@api_boundary
 def complex(x: Array, y: Array) -> Array:
   r"""Elementwise make complex number: :math:`x + jy`.
 
@@ -259,18 +290,22 @@ def complex(x: Array, y: Array) -> Array:
   """
   return complex_p.bind(_brcast(x, y), _brcast(y, x))
 
+@api_boundary
 def conj(x: Array) -> Array:
   r"""Elementwise complex conjugate function: :math:`\overline{x}`."""
   return conj_p.bind(x, input_dtype=_dtype(x))
 
+@api_boundary
 def abs(x: Array) -> Array:
   r"""Elementwise absolute value: :math:`|x|`."""
   return abs_p.bind(x)
 
+@api_boundary
 def pow(x: Array, y: Array) -> Array:
   r"""Elementwise power: :math:`x^y`."""
   return pow_p.bind(x, y)
 
+@api_boundary
 def integer_pow(x: Array, y: int) -> Array:
   r"""Elementwise power: :math:`x^y`, where :math:`y` is a fixed integer."""
   if y == 0:
@@ -280,54 +315,67 @@ def integer_pow(x: Array, y: int) -> Array:
   else:
     return integer_pow_p.bind(x, y=y)
 
+@api_boundary
 def sqrt(x: Array) -> Array:
   r"""Elementwise square root: :math:`\sqrt{x}`."""
   return sqrt_p.bind(x)
 
+@api_boundary
 def rsqrt(x: Array) -> Array:
   r"""Elementwise reciprocal square root:  :math:`1 \over \sqrt{x}."""
   return rsqrt_p.bind(x)
 
+@api_boundary
 def bitwise_not(x: Array) -> Array:
   r"""Elementwise NOT: :math:`\neg x`."""
   return not_p.bind(x)
 
+@api_boundary
 def bitwise_and(x: Array, y: Array) -> Array:
   r"""Elementwise AND: :math:`x \wedge y`."""
   return and_p.bind(x, y)
 
+@api_boundary
 def bitwise_or(x: Array, y: Array) -> Array:
   r"""Elementwise OR: :math:`x \vee y`."""
   return or_p.bind(x, y)
 
+@api_boundary
 def bitwise_xor(x: Array, y: Array) -> Array:
   r"""Elementwise exclusive OR: :math:`x \oplus y`."""
   return xor_p.bind(x, y)
 
+@api_boundary
 def population_count(x: Array) -> Array:
   r"""Elementwise popcount, count the number of set bits in each element."""
   return population_count_p.bind(x)
 
+@api_boundary
 def add(x: Array, y: Array) -> Array:
   r"""Elementwise addition: :math:`x + y`."""
   return add_p.bind(x, y)
 
+@api_boundary
 def sub(x: Array, y: Array) -> Array:
   r"""Elementwise subtraction: :math:`x - y`."""
   return sub_p.bind(x, y)
 
+@api_boundary
 def mul(x: Array, y: Array) -> Array:
   r"""Elementwise multiplication: :math:`x \times y`."""
   return mul_p.bind(x, y)
 
+@api_boundary
 def div(x: Array, y: Array) -> Array:
   r"""Elementwise division: :math:`x \over y`."""
   return div_p.bind(x, y)
 
+@api_boundary
 def rem(x: Array, y: Array) -> Array:
   r"""Elementwise remainder: :math:`x \bmod y`."""
   return rem_p.bind(x, y)
 
+@api_boundary
 def max(x: Array, y: Array) -> Array:
   r"""Elementwise maximum: :math:`\mathrm{max}(x, y)`
 
@@ -335,6 +383,7 @@ def max(x: Array, y: Array) -> Array:
   `(real, imaginary)` pairs."""
   return max_p.bind(x, y)
 
+@api_boundary
 def min(x: Array, y: Array) -> Array:
   r"""Elementwise minimum:  :math:`\mathrm{min}(x, y)`
 
@@ -342,42 +391,52 @@ def min(x: Array, y: Array) -> Array:
   `(real, imaginary)` pairs."""
   return min_p.bind(x, y)
 
+@api_boundary
 def shift_left(x: Array, y: Array) -> Array:
   r"""Elementwise left shift: :math:`x \ll y`."""
   return shift_left_p.bind(x, y)
 
+@api_boundary
 def shift_right_arithmetic(x: Array, y: Array) -> Array:
   r"""Elementwise arithmetic right shift: :math:`x \gg y`."""
   return shift_right_arithmetic_p.bind(x, y)
 
+@api_boundary
 def shift_right_logical(x: Array, y: Array) -> Array:
   r"""Elementwise logical right shift: :math:`x \gg y`."""
   return shift_right_logical_p.bind(x, y)
 
+@api_boundary
 def eq(x: Array, y: Array) -> Array:
   r"""Elementwise equals: :math:`x = y`."""
   return eq_p.bind(x, y)
 
+@api_boundary
 def ne(x: Array, y: Array) -> Array:
   r"""Elementwise not-equals: :math:`x \neq y`."""
   return ne_p.bind(x, y)
 
+@api_boundary
 def ge(x: Array, y: Array) -> Array:
   r"""Elementwise greater-than-or-equals: :math:`x \geq y`."""
   return ge_p.bind(x, y)
 
+@api_boundary
 def gt(x: Array, y: Array) -> Array:
   r"""Elementwise greater-than: :math:`x > y`."""
   return gt_p.bind(x, y)
 
+@api_boundary
 def le(x: Array, y: Array) -> Array:
   r"""Elementwise less-than-or-equals: :math:`x \leq y`."""
   return le_p.bind(x, y)
 
+@api_boundary
 def lt(x: Array, y: Array) -> Array:
   r"""Elementwise less-than: :math:`x < y`."""
   return lt_p.bind(x, y)
 
+@api_boundary
 def convert_element_type(operand: Array, new_dtype: DType) -> Array:
   """Elementwise cast.
 
@@ -409,6 +468,7 @@ def convert_element_type(operand: Array, new_dtype: DType) -> Array:
   return convert_element_type_p.bind(
       operand, new_dtype=new_dtype, old_dtype=old_dtype)
 
+@api_boundary
 def bitcast_convert_type(operand: Array, new_dtype: DType) -> Array:
   """Elementwise bitcast.
 
@@ -432,6 +492,7 @@ def bitcast_convert_type(operand: Array, new_dtype: DType) -> Array:
   else:
     return operand
 
+@api_boundary
 def clamp(min: Array, x: Array, max: Array) -> Array:
   r"""Elementwise clamp.
 
@@ -443,6 +504,7 @@ def clamp(min: Array, x: Array, max: Array) -> Array:
   """
   return clamp_p.bind(min, x, max)
 
+@api_boundary
 def concatenate(operands: Sequence[Array], dimension: int) -> Array:
   """Concatenates a sequence of arrays along `dimension`.
 
@@ -482,6 +544,7 @@ class ConvDimensionNumbers(NamedTuple):
 ConvGeneralDilatedDimensionNumbers = Union[
   None, ConvDimensionNumbers, Tuple[str, str, str]]
 
+@api_boundary
 def conv_general_dilated(
   lhs: Array, rhs: Array, window_strides: Sequence[int],
   padding: Union[str, Sequence[Tuple[int, int]]],
@@ -573,6 +636,7 @@ def conv_general_dilated(
       lhs_shape=lhs.shape, rhs_shape=rhs.shape,
       precision=_canonicalize_precision(precision))
 
+@api_boundary
 def dot(lhs: Array, rhs: Array, precision: Optional[PrecisionType] = None) -> Array:
   """Vector/vector, matrix/vector, and matrix/matrix multiplication.
 
@@ -603,6 +667,7 @@ def dot(lhs: Array, rhs: Array, precision: Optional[PrecisionType] = None) -> Ar
 DotDimensionNumbers = Tuple[Tuple[Sequence[int], Sequence[int]],
                             Tuple[Sequence[int], Sequence[int]]]
 
+@api_boundary
 def dot_general(lhs: Array, rhs: Array, dimension_numbers: DotDimensionNumbers,
                 precision: Optional[PrecisionType] = None) -> Array:
   """More general contraction operator.
@@ -631,6 +696,7 @@ def dot_general(lhs: Array, rhs: Array, dimension_numbers: DotDimensionNumbers,
                             dimension_numbers=(contract_dims, batch_dims),
                             precision=_canonicalize_precision(precision))
 
+@api_boundary
 def broadcast(operand: Array, sizes: Sequence[int]) -> Array:
   """Broadcasts an array, adding new major dimensions.
 
@@ -649,6 +715,7 @@ def broadcast(operand: Array, sizes: Sequence[int]) -> Array:
   dims = tuple(range(len(sizes), len(sizes) + np.ndim(operand)))
   return broadcast_in_dim(operand, tuple(sizes) + np.shape(operand), dims)
 
+@api_boundary
 def broadcast_in_dim(operand: Array, shape: Shape,
                      broadcast_dimensions: Sequence[int]) -> Array:
   """Wraps XLA's `BroadcastInDim
@@ -664,10 +731,12 @@ def broadcast_in_dim(operand: Array, shape: Shape,
       operand, shape=tuple(shape),
       broadcast_dimensions=tuple(broadcast_dimensions))
 
+@api_boundary
 def broadcast_to_rank(x: Array, rank: int) -> Array:
   """Adds leading dimensions of ``1`` to give ``x`` rank ``rank``."""
   return broadcast(x, (1,) * (rank - x.ndim))
 
+@api_boundary
 def reshape(operand: Array, new_sizes: Shape,
             dimensions: Optional[Sequence[int]] = None) -> Array:
   """Wraps XLA's `Reshape
@@ -689,6 +758,7 @@ def reshape(operand: Array, new_sizes: Shape,
       operand, new_sizes=new_sizes,
       dimensions=None if dimensions is None or same_dims else tuple(dimensions))
 
+@api_boundary
 def pad(operand: Array, padding_value: Array,
         padding_config: Sequence[Tuple[int, int, int]]) -> Array:
   """Wraps XLA's `Pad
@@ -697,6 +767,7 @@ def pad(operand: Array, padding_value: Array,
   """
   return pad_p.bind(operand, padding_value, padding_config=tuple(padding_config))
 
+@api_boundary
 def rev(operand: Array, dimensions: Sequence[int]) -> Array:
   """Wraps XLA's `Rev
   <https://www.tensorflow.org/xla/operation_semantics#rev_reverse>`_
@@ -704,6 +775,7 @@ def rev(operand: Array, dimensions: Sequence[int]) -> Array:
   """
   return rev_p.bind(operand, dimensions=tuple(dimensions))
 
+@api_boundary
 def select(pred: Array, on_true: Array, on_false: Array) -> Array:
   """Wraps XLA's `Select
   <https://www.tensorflow.org/xla/operation_semantics#select>`_
@@ -711,6 +783,7 @@ def select(pred: Array, on_true: Array, on_false: Array) -> Array:
   """
   return select_p.bind(pred, on_true, on_false)
 
+@api_boundary
 def slice(operand: Array, start_indices: Sequence[int],
           limit_indices: Sequence[int],
           strides: Optional[Sequence[int]] = None) -> Array:
@@ -727,6 +800,7 @@ def slice(operand: Array, start_indices: Sequence[int],
                         limit_indices=tuple(limit_indices),
                         strides=None if strides is None else tuple(strides))
 
+@api_boundary
 def dynamic_slice(operand: Array, start_indices: Sequence[Array],
                   slice_sizes: Shape) -> Array:
   """Wraps XLA's `DynamicSlice
@@ -749,6 +823,7 @@ def dynamic_slice(operand: Array, start_indices: Sequence[Array],
   return dynamic_slice_p.bind(operand, *start_indices,
                               slice_sizes=tuple(slice_sizes))
 
+@api_boundary
 def dynamic_update_slice(operand: Array, update: Array,
                          start_indices: Array) -> Array:
   """Wraps XLA's `DynamicUpdateSlice
@@ -794,6 +869,7 @@ class GatherDimensionNumbers(NamedTuple):
   start_index_map: Sequence[int]
 
 
+@api_boundary
 def gather(operand: Array, start_indices: Array,
            dimension_numbers: GatherDimensionNumbers,
            slice_sizes: Shape) -> Array:
@@ -849,6 +925,7 @@ class ScatterDimensionNumbers(NamedTuple):
   inserted_window_dims: Sequence[int]
   scatter_dims_to_operand_dims: Sequence[int]
 
+@api_boundary
 def scatter_add(operand: Array, scatter_indices: Array, updates: Array,
                 dimension_numbers: ScatterDimensionNumbers, *,
                 indices_are_sorted: bool = False,
@@ -884,6 +961,7 @@ def scatter_add(operand: Array, scatter_indices: Array, updates: Array,
       update_consts=consts, dimension_numbers=dimension_numbers,
       indices_are_sorted=indices_are_sorted, unique_indices=unique_indices)
 
+@api_boundary
 def scatter_mul(operand: Array, scatter_indices: Array, updates: Array,
                 dimension_numbers: ScatterDimensionNumbers, *,
                 indices_are_sorted: bool = False,
@@ -919,6 +997,7 @@ def scatter_mul(operand: Array, scatter_indices: Array, updates: Array,
       update_consts=consts, dimension_numbers=dimension_numbers,
       indices_are_sorted=indices_are_sorted, unique_indices=unique_indices)
 
+@api_boundary
 def scatter_min(operand: Array, scatter_indices: Array, updates: Array,
                 dimension_numbers: ScatterDimensionNumbers, *,
                 indices_are_sorted: bool = False,
@@ -954,6 +1033,7 @@ def scatter_min(operand: Array, scatter_indices: Array, updates: Array,
       update_consts=consts, dimension_numbers=dimension_numbers,
       indices_are_sorted=indices_are_sorted, unique_indices=unique_indices)
 
+@api_boundary
 def scatter_max(operand: Array, scatter_indices: Array, updates: Array,
                 dimension_numbers: ScatterDimensionNumbers, *,
                 indices_are_sorted: bool = False,
@@ -992,6 +1072,7 @@ def scatter_max(operand: Array, scatter_indices: Array, updates: Array,
 # Define this outside of scatter to ensure cache hits.
 _scatter_reduction_computation = lambda x, y: y
 
+@api_boundary
 def scatter(operand: Array, scatter_indices: Array, updates: Array,
             dimension_numbers: ScatterDimensionNumbers, *,
             indices_are_sorted: bool = False,
@@ -1031,6 +1112,7 @@ def scatter(operand: Array, scatter_indices: Array, updates: Array,
       update_consts=consts, dimension_numbers=dimension_numbers,
       indices_are_sorted=indices_are_sorted, unique_indices=unique_indices)
 
+@api_boundary
 def index_take(src: Array, idxs: Array, axes: Sequence[int]) -> Array:
   indices = concatenate([expand_dims(i, (1,)) for i in idxs], 1)
   indices = indices % np.array([src.shape[ax] for ax in axes])
@@ -1045,6 +1127,7 @@ def index_take(src: Array, idxs: Array, axes: Sequence[int]) -> Array:
   return gather(src, indices, dimension_numbers=dnums,
                 slice_sizes=tuple(slice_sizes))
 
+@api_boundary
 def transpose(operand: Array, permutation: Sequence[int]) -> Array:
   """Wraps XLA's `Transpose
   <https://www.tensorflow.org/xla/operation_semantics#transpose>`_
@@ -1056,18 +1139,21 @@ def transpose(operand: Array, permutation: Sequence[int]) -> Array:
   else:
     return transpose_p.bind(operand, permutation=permutation)
 
+@api_boundary
 def argmin(operand: Array, axis: int,
            index_dtype: DType) -> Tuple[Array, Array]:
   """Computes the index of the minimum element along ``axis``."""
   return argmin_p.bind(operand, axes=(axis,),
                        index_dtype=dtypes.canonicalize_dtype(index_dtype))
 
+@api_boundary
 def argmax(operand: Array, axis: int,
            index_dtype: DType) -> Tuple[Array, Array]:
   """Computes the index of the maximum element along ``axis``."""
   return argmax_p.bind(operand, axes=(axis,),
                        index_dtype=dtypes.canonicalize_dtype(index_dtype))
 
+@api_boundary
 def reduce(operand: Array, init_value: Array, computation: Callable,
            dimensions: Sequence[int]) -> Array:
   """Wraps XLA's `Reduce
@@ -1141,6 +1227,7 @@ def _reduce_or(operand: Array, axes: Sequence[int]) -> Array:
 def _reduce_and(operand: Array, axes: Sequence[int]) -> Array:
   return reduce_and_p.bind(operand, axes=tuple(axes))
 
+@api_boundary
 def reduce_window(operand: Array, init_value: Array, computation: Callable,
                   window_dimensions: Shape, window_strides: Sequence[int],
                   padding: Union[str, Sequence[Tuple[int, int]]],
@@ -1311,22 +1398,27 @@ def _select_and_gather_add(tangents: Array, operand: Array,
       base_dilation=tuple(base_dilation),
       window_dilation=tuple(window_dilation))
 
+@api_boundary
 def cumsum(operand: Array, axis: int) -> Array:
   """Computes a cumulative sum along `axis`."""
   return cumsum_p.bind(operand, axis=int(axis))
 
+@api_boundary
 def cumprod(operand: Array, axis: int) -> Array:
   """Computes a cumulative product along `axis`."""
   return cumprod_p.bind(operand, axis=int(axis))
 
+@api_boundary
 def cummax(operand: Array, axis: int) -> Array:
   """Computes a cumulative maximum along `axis`."""
   return cummax_p.bind(operand, axis=int(axis))
 
+@api_boundary
 def cummin(operand: Array, axis: int) -> Array:
   """Computes a cumulative minimum along `axis`."""
   return cummin_p.bind(operand, axis=int(axis))
 
+@api_boundary
 def sort(operand: Union[Array, Sequence[Array]], dimension: int = -1,
          is_stable: bool = True, num_keys: int = 1) -> Union[Array, Tuple[Array, ...]]:
   """Wraps XLA's `Sort
@@ -1360,6 +1452,7 @@ def sort(operand: Union[Array, Sequence[Array]], dimension: int = -1,
     dimension = canonicalize_axis(dimension, len(operand.shape))
     return sort_p.bind(operand, dimension=dimension, is_stable=is_stable, num_keys=1)[0]
 
+@api_boundary
 def sort_key_val(keys: Array, values: Array, dimension: int = -1,
                  is_stable: bool = True) -> Tuple[Array, Array]:
   """Sorts ``keys`` along ``dimension`` and applies same permutation to ``values``."""
@@ -1367,6 +1460,7 @@ def sort_key_val(keys: Array, values: Array, dimension: int = -1,
   k, v = sort_p.bind(keys, values, dimension=dimension, is_stable=is_stable, num_keys=1)
   return k, v
 
+@api_boundary
 def top_k(operand: Array, k: int) -> Tuple[Array, Array]:
   """Returns top ``k`` values and their indices along the last axis of ``operand``."""
   k = int(k)
@@ -1374,10 +1468,12 @@ def top_k(operand: Array, k: int) -> Tuple[Array, Array]:
     raise ValueError("k argument to top_k must be nonnegative, got {}".format(k))
   return top_k_p.bind(operand, k=k)
 
+@api_boundary
 def tie_in(x: Array, y: Array) -> Array:
   """Deprecated. Ignores ``x`` and returns ``y``."""
   return y
 
+@api_boundary
 def full(shape: Shape, fill_value: Array, dtype: Optional[DType] = None) -> Array:
   """Returns an array of `shape` filled with `fill_value`.
 
@@ -1404,6 +1500,7 @@ def _device_put_raw(x):
     aval = raise_to_shaped(core.get_aval(x))
     return xla.array_result_handler(None, aval)(xla.device_put(x))
 
+@api_boundary
 def iota(dtype: DType, size: int) -> Array:
   """Wraps XLA's `Iota
   <https://www.tensorflow.org/xla/operation_semantics#iota>`_
@@ -1416,6 +1513,7 @@ def iota(dtype: DType, size: int) -> Array:
   aval = ShapedArray(shape, dtype)
   return xla.DeviceArray(aval, None, lazy_expr, xla.DeviceConstant())
 
+@api_boundary
 def broadcasted_iota(dtype: DType, shape: Shape, dimension: int) -> Array:
   """Convenience wrapper around ``iota``."""
   dtype = dtypes.canonicalize_dtype(dtype)
@@ -1459,6 +1557,7 @@ def _tri(dtype: DType, shape: Shape, offset: int) -> Array:
   aval = ShapedArray((N, M), dtype)
   return xla.DeviceArray(aval, None, lazy_expr, xla.DeviceConstant())
 
+@api_boundary
 def stop_gradient(x):
   """Stops gradient computation.
 
@@ -1491,6 +1590,7 @@ def stop_gradient(x):
 ### convenience wrappers around traceables
 
 
+@api_boundary
 def conv(lhs: Array, rhs: Array, window_strides: Sequence[int],
          padding: str, precision: Optional[PrecisionType] = None) -> Array:
   """Convenience wrapper around `conv_general_dilated`.
@@ -1511,6 +1611,7 @@ def conv(lhs: Array, rhs: Array, window_strides: Sequence[int],
   return conv_general_dilated(lhs, rhs, window_strides, padding,
                               precision=precision)
 
+@api_boundary
 def conv_with_general_padding(lhs: Array, rhs: Array,
                               window_strides: Sequence[int],
                               padding: Union[str, Sequence[Tuple[int, int]]],
@@ -1578,6 +1679,7 @@ def _flip_axes(x, axes):
   return x
 
 
+@api_boundary
 def conv_transpose(lhs: Array, rhs: Array, strides: Sequence[int],
                    padding: Union[str, Sequence[Tuple[int, int]]],
                    rhs_dilation: Optional[Sequence[int]] = None,
@@ -1650,6 +1752,7 @@ def conv_transpose(lhs: Array, rhs: Array, strides: Sequence[int],
                               precision=precision)
 
 
+@api_boundary
 def full_like(x: Array, fill_value: Array, dtype: Optional[DType] = None,
               shape: Optional[Shape] = None) -> Array:
   """Create a full array like np.full based on the example array `x`.
@@ -1670,6 +1773,7 @@ def full_like(x: Array, fill_value: Array, dtype: Optional[DType] = None,
   return full(fill_shape, fill_value, dtype or _dtype(x))
 
 
+@api_boundary
 def collapse(operand: Array, start_dimension: int, stop_dimension: int) -> Array:
   lo, hi = start_dimension, stop_dimension
   size = prod(operand.shape[lo:hi])
@@ -1677,6 +1781,7 @@ def collapse(operand: Array, start_dimension: int, stop_dimension: int) -> Array
   return reshape(operand, new_shape)
 
 
+@api_boundary
 def slice_in_dim(operand: Array, start_index: Optional[int],
                  limit_index: Optional[int],
                  stride: int = 1, axis: int = 0)-> Array:
@@ -1704,6 +1809,7 @@ def slice_in_dim(operand: Array, start_index: Optional[int],
   return slice(operand, start_indices, limit_indices, strides)
 
 
+@api_boundary
 def index_in_dim(operand: Array, index: int, axis: int = 0,
                  keepdims: bool = True) -> Array:
   """Convenience wrapper around slice to perform int indexing."""
@@ -1720,6 +1826,7 @@ def index_in_dim(operand: Array, index: int, axis: int = 0,
     return squeeze(result, (axis,))
 
 
+@api_boundary
 def dynamic_slice_in_dim(operand: Array, start_index: Array,
                          slice_size: int, axis: int = 0) -> Array:
   """Convenience wrapper around dynamic_slice applying to one dimension."""
@@ -1732,6 +1839,7 @@ def dynamic_slice_in_dim(operand: Array, start_index: Array,
   return dynamic_slice(operand, start_indices, slice_sizes)
 
 
+@api_boundary
 def dynamic_index_in_dim(operand: Array, index: Array, axis: int = 0,
                          keepdims: bool = True) -> Array:
   """Convenience wrapper around dynamic_slice to perform int indexing."""
@@ -1742,6 +1850,7 @@ def dynamic_index_in_dim(operand: Array, index: Array, axis: int = 0,
     return squeeze(result, (axis,))
 
 
+@api_boundary
 def dynamic_update_slice_in_dim(operand: Array, update: Array,
                                 start_index: Array, axis: int) -> Array:
   axis = int(axis)
@@ -1750,6 +1859,7 @@ def dynamic_update_slice_in_dim(operand: Array, update: Array,
   return dynamic_update_slice(operand, update, start_indices)
 
 
+@api_boundary
 def dynamic_update_index_in_dim(operand: Array, update: Array, index: Array,
                                 axis: int) -> Array:
   axis = int(axis)
@@ -1759,6 +1869,7 @@ def dynamic_update_index_in_dim(operand: Array, update: Array, index: Array,
   return dynamic_update_slice_in_dim(operand, update, index, axis)
 
 
+@api_boundary
 def batch_matmul(lhs: Array, rhs: Array,
                  precision: Optional[PrecisionType] = None) -> Array:
   """Batch matrix multiplication."""
@@ -1778,10 +1889,12 @@ def batch_matmul(lhs: Array, rhs: Array,
 # These functions also exist in the XLA client library, but we treat them
 # as non-primitive to maintain a smaller set of autodiff primitives.
 
+@api_boundary
 def square(x: Array) -> Array:
   r"""Elementwise square: :math:`x^2`."""
   return integer_pow(x, 2)
 
+@api_boundary
 def reciprocal(x: Array) -> Array:
   r"""Elementwise reciprocal: :math:`1 \over x`."""
   return integer_pow(x, -1)
@@ -1797,13 +1910,13 @@ def _upcast_fp16_for_computation(f):
 
   return f_wrapped
 
-@api.jit
+@api.jit                        # `api_boundary` via `jit`
 @_upcast_fp16_for_computation
 def tan(x: Array) -> Array:
   r"""Elementwise tangent: :math:`\mathrm{tan}(x)`."""
   return div(sin(x), cos(x))
 
-@api.jit
+@api.jit                        # `api_boundary` via `jit`
 def asin(x: Array) -> Array:
   r"""Elementwise arc sine: :math:`\mathrm{asin}(x)`."""
   if dtypes.issubdtype(_dtype(x), np.complexfloating):
@@ -1812,7 +1925,7 @@ def asin(x: Array) -> Array:
     return mul(_const(x, 2),
                atan2(x, add(_const(x, 1), sqrt(sub(_const(x, 1), square(x))))))
 
-@api.jit
+@api.jit                        # `api_boundary` via `jit`
 def acos(x: Array) -> Array:
   r"""Elementwise arc cosine: :math:`\mathrm{acos}(x)`."""
   if dtypes.issubdtype(_dtype(x), np.complexfloating):
@@ -1831,6 +1944,7 @@ def acos(x: Array) -> Array:
             atan2(sqrt(sub(_const(x, 1), square(x))), add(_const(x, 1), x))),
         full_like(x, np.pi))
 
+@api_boundary
 def atan(x: Array) -> Array:
   r"""Elementwise arc tangent: :math:`\mathrm{atan}(x)`."""
   if dtypes.issubdtype(_dtype(x), np.complexfloating):
@@ -1838,22 +1952,27 @@ def atan(x: Array) -> Array:
   else:
     return atan2(x, _const(x, 1))
 
+@api_boundary
 def sinh(x: Array) -> Array:
   r"""Elementwise hyperbolic sine: :math:`\mathrm{sinh}(x)`."""
   return sinh_p.bind(x)
 
+@api_boundary
 def cosh(x: Array) -> Array:
   r"""Elementwise hyperbolic cosine: :math:`\mathrm{cosh}(x)`."""
   return cosh_p.bind(x)
 
+@api_boundary
 def asinh(x: Array) -> Array:
   r"""Elementwise inverse hyperbolic sine: :math:`\mathrm{asinh}(x)`."""
   return asinh_p.bind(x)
 
+@api_boundary
 def acosh(x: Array) -> Array:
   r"""Elementwise inverse hyperbolic cosine: :math:`\mathrm{acosh}(x)`."""
   return acosh_p.bind(x)
 
+@api_boundary
 def atanh(x: Array) -> Array:
   r"""Elementwise inverse hyperbolic tangent: :math:`\mathrm{atanh}(x)`."""
   return atanh_p.bind(x)

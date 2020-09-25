@@ -23,7 +23,7 @@ from .api_util import wraps
 _jax_path = os.path.dirname(__file__)
 _include_paths = [
     os.path.join(_jax_path, path) for path in (
-        'config.py', 'dlpack.py', 'experimental', 'lax', 'lax_linalg.py',
+        'config.py', 'dlpack.py', 'experimental', 'lax_linalg.py',
         'lax_reference.py', 'nn', 'numpy', 'ops', 'profiler.py', 'random.py',
         'scipy', 'test_util.py', 'third_party', 'tools',
     )]
