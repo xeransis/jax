@@ -120,10 +120,15 @@ xla_result_handlers: Dict[Type[core.AbstractValue], Callable[..., Callable]] = {
 }
 
 def device_put(x, device: Optional[Device] = None) -> Tuple[Any]:
-  x = canonicalize_dtype(x)
-  try:
+  handler = device_put_handlers.get(type(x))
+  if handler:
+    x = canonicalize_dtype(x)
     return device_put_handlers[type(x)](x, device)
-  except KeyError as err:
+  elif hasattr(x, '__jax_array__'):
+    return device_put(x.__jax_array__(), device)
+  elif hasattr(x, '__array__'):
+    return device_put(x.__array__(), device)
+  else:
     raise TypeError(f"No device_put handler for type: {type(x)}") from err
 
 def _device_put_array(x, device: Optional[Device]):
@@ -149,7 +154,12 @@ def canonicalize_dtype(x):
   for typ in typ.mro():
     handler = canonicalize_dtype_handlers.get(typ)
     if handler: return handler(x)
-  raise TypeError(f"No canonicalize_dtype handler for type: {type(x)}")
+  if hasattr(x, '__jax_array__'):
+    return canonicalize_dtype(x.__jax_array__())
+  elif hasattr(x, '__array__'):
+    return canonicalize_dtype(x.__array__())
+  else:
+    raise TypeError(f"No canonicalize_dtype handler for type: {type(x)}")
 
 def _canonicalize_ndarray_dtype(x):
   return np.asarray(x, dtypes.canonicalize_dtype(dtypes.result_type(x)))
@@ -171,7 +181,12 @@ def abstractify(x) -> core.AbstractValue:
   for typ in typ.mro():
     aval_fn = pytype_aval_mappings.get(typ)
     if aval_fn: return aval_fn(x)
-  raise TypeError(f"Argument '{x}' of type '{type(x)}' is not a valid JAX type")
+  if hasattr(x, '__jax_array__'):
+    return abstractify(x.__jax_array__())
+  elif hasattr(x, '__array__'):
+    return abstractify(x.__array__())
+  else:
+    raise TypeError(f"Argument '{x}' of type '{type(x)}' is not a valid JAX type")
 
 def _make_abstract_python_scalar(typ, _):
   return ShapedArray((), dtypes.python_scalar_dtypes[typ], weak_type=True)
