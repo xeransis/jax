@@ -256,6 +256,40 @@ class GmapTest(jtu.JaxTestCase):
     python_should_be_executing = False
     fm(x)
 
+  def testPdotBasic(self):
+    def f(x, y):
+      return lax.pdot(x, y, 'i')
+
+    f_mapped = xmap(f, in_axes=[A({'i': 1}), A({'i': 0})], out_axes=A(),
+                    schedule=[('i', 'r1'), ('i', 'vectorize')])
+
+    rng = np.random.RandomState(0)
+    x = rng.randn(3, 8)
+    y = rng.randn(8, 5)
+
+    with fake_resources(r1=2):
+      z = f_mapped(x, y)
+
+    self.assertAllClose(z, jnp.dot(x, y))
+
+  def testPdotBatching(self):
+    def f(x, y):
+      return lax.pdot(x, y, 'i')
+
+    rng = np.random.RandomState(0)
+    x = rng.randn(2, 3, 8)
+    y = rng.randn(2, 8, 5)
+
+    f_mapped = xmap(f,
+                    in_axes=[A({'i': 2, 'j': 0}), A({'i': 1, 'j': 0})],
+                    out_axes=A({'j': 0}),
+                    schedule=[('j', 'vectorize'), ('i', 'r1'), ('i', 'vectorize')])
+
+    with fake_resources(r1=2):
+      z = f_mapped(x, y)
+
+    self.assertAllClose(z, jnp.einsum('nij,njk->nik', x, y))
+
 
 if __name__ == '__main__':
   absltest.main(testLoader=jtu.JaxTestLoader())

@@ -1112,5 +1112,32 @@ class BatchingTest(jtu.JaxTestCase):
       x - np.arange(x.shape[0]))
 
 
+  def testCollectivePdot(self):
+    def f(x, y):
+      return lax.pdot(x, y, 'i')
+
+    rng = np.random.RandomState(0)
+
+    x = rng.randn(3, 4)
+    y = rng.randn(4, 5)
+    z = vmap(f, axis_name='i', in_axes=(1, 0), out_axes=None)(x, y)
+    self.assertAllClose(z, jnp.dot(x, y))
+
+    x = rng.randn(4, 3)
+    y = rng.randn(4, 5)
+    z = vmap(f, axis_name='i', in_axes=(0, 0), out_axes=None)(x, y)
+    self.assertAllClose(z, jnp.dot(x.T, y))
+
+  def testCollectivePdotBatching(self):
+    def f(x, y):
+      return lax.pdot(x, y, 'i')
+
+    rng = np.random.RandomState(1)
+    xs = rng.randn(2, 8, 3)
+    ys = rng.randn(2, 3, 5)
+    zs = vmap(vmap(f, axis_name='i', in_axes=(1, 0), out_axes=None))(xs, ys)
+    self.assertAllClose(zs, jnp.einsum('nij,njk->nik', xs, ys))
+
+
 if __name__ == '__main__':
   absltest.main(testLoader=jtu.JaxTestLoader())
