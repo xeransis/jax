@@ -1138,6 +1138,21 @@ class BatchingTest(jtu.JaxTestCase):
     zs = vmap(vmap(f, axis_name='i', in_axes=(1, 0), out_axes=None))(xs, ys)
     self.assertAllClose(zs, jnp.einsum('nij,njk->nik', xs, ys))
 
+  def testPdotJvp(self):
+    def f(x, y):
+      return lax.pdot(x, y, 'i')
+
+    rng = np.random.RandomState(1)
+    x = rng.randn(3, 4)
+    x_dot = rng.randn(*x.shape)
+    y = rng.randn(4, 5)
+    y_dot = rng.randn(*y.shape)
+
+    z, z_dot = vmap(lambda x, y, x_dot, y_dot: jvp(f, (x, y), (x_dot, y_dot)),
+                    axis_name='i', in_axes=(1, 0, 1, 0), out_axes=None)(x, y, x_dot, y_dot)
+    self.assertAllClose(z, jnp.dot(x, y))
+    self.assertAllClose(z_dot, jnp.dot(x_dot, y) + jnp.dot(x, y_dot))
+
 
 if __name__ == '__main__':
   absltest.main(testLoader=jtu.JaxTestLoader())

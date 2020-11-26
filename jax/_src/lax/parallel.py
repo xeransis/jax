@@ -809,6 +809,16 @@ def _pdot_translation_rule(c, x, y, *, axis_name, pos_contract, pos_batch,
   return out
 xla.parallel_translations[pdot_p] = _pdot_translation_rule
 
+def _pdot_transpose_lhs(g, y, *, axis_name, pos_contract, pos_batch):
+  # TODO: avals with names, call pbroadcast
+  return lax.dot_general_transpose_lhs(
+      g, y, dimension_numbers=[pos_contract, pos_batch], precision=None)
+def _pdot_transpose_rhs(g, x, *, axis_name, pos_contract, pos_batch):
+  # TODO: avals with names, call pbroadcast
+  return lax.dot_general_transpose_rhs(
+      g, y, dimension_numbers=[pos_contract, pos_batch], precision=None)
+ad.defbilinear(pdot_p, _pdot_transpose_lhs, _pdot_transpose_rhs)
+
 
 @config.register_omnistaging_disabler
 def omnistaging_disabler() -> None:
